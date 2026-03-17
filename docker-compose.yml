@@ -1,0 +1,31 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: nereus
+      POSTGRES_USER: nereus_admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+  redis:
+    image: redis:6-alpine
+  api:
+    build: ./backend
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend:/app
+      - shared_data:/data # Crucial for sharing CAD files with worker
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+  worker:
+    build: ./simulation_worker
+    volumes:
+      - ./simulation_worker:/app
+      - shared_data:/data # Worker reads files here, runs OpenFOAM, writes results
+    depends_on:
+      - redis
+
+volumes:
+  shared_data: # Local volume simulating S3 for the MVP
