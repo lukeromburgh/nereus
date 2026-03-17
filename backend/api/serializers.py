@@ -16,7 +16,17 @@ class SimulationRunSerializer(serializers.ModelSerializer):
     class Meta:
         model = SimulationRun
         fields = '__all__'
-        read_only_fields = ['status', 'created_at', 'updated_at', 'current_logs', 'result_mesh_path']
+        read_only_fields = [
+            'status',
+            'created_at',
+            'updated_at',
+            'current_logs',
+            'result_mesh_path',
+            'result_sequence_path',
+            'frame_mapping',
+            'metrics_series',
+            'convergence_series',
+        ]
 
     # For internal service/worker patching, allow status and logs
     def update(self, instance, validated_data):
@@ -26,4 +36,12 @@ class SimulationRunSerializer(serializers.ModelSerializer):
             instance.current_logs = self.initial_data['current_logs']
         if 'result_mesh_path' in self.initial_data:
             instance.result_mesh_path = self.initial_data['result_mesh_path']
+        if 'result_sequence_path' in self.initial_data:
+            instance.result_sequence_path = self.initial_data['result_sequence_path']
+        if 'frame_mapping' in self.initial_data:
+            instance.frame_mapping = self.initial_data['frame_mapping']
+        if 'metrics_series' in self.initial_data:
+            instance.metrics_series = self.initial_data['metrics_series']
+        if 'convergence_series' in self.initial_data:
+            instance.convergence_series = self.initial_data['convergence_series']
         return super().update(instance, validated_data)

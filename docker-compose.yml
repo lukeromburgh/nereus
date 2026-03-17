@@ -8,24 +8,43 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
   redis:
     image: redis:6-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
   api:
     build: ./backend
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - ./backend:/app
       - shared_data:/data # Crucial for sharing CAD files with worker
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DJANGO_MEDIA_ROOT: /data/media
     ports:
       - "8000:8000"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_started
+      redis:
+        condition: service_healthy
   worker:
+    platform: linux/amd64
     build: ./simulation_worker
+    entrypoint: ["/bin/bash", "-lc"]
+    command: ["source /opt/openfoam11/etc/bashrc && celery -A tasks worker --loglevel=info"]
     volumes:
       - ./simulation_worker:/app
       - shared_data:/data # Worker reads files here, runs OpenFOAM, writes results
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DJANGO_MEDIA_ROOT: /data/media
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
 
 volumes:
   shared_data: # Local volume simulating S3 for the MVP

@@ -1,20 +1,33 @@
-import React from 'react';
 import { useGLTF } from '@react-three/drei';
+import { useLoader } from '@react-three/fiber';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 
 interface HydrofoilResultsProps {
   url: string;
 }
 
+function StlResults({ url }: HydrofoilResultsProps) {
+  const geometry = useLoader(STLLoader, url);
+  geometry.computeVertexNormals();
+
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial />
+    </mesh>
+  );
+}
+
+function GltfResults({ url }: HydrofoilResultsProps) {
+  const { scene } = useGLTF(url);
+  return <primitive object={scene} />;
+}
+
 export function HydrofoilResults({ url }: HydrofoilResultsProps) {
-  // Dynamically loads the PyVista GLTF output
-  // Warning: Requires robust error boundaries if file unreadable!
-  const { scene } = useGLTF(url); 
+  const lowerUrl = url.toLowerCase();
 
   return (
     <group>
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[10, 10, 5]} intensity={1} />
-      <primitive object={scene} />
+      {lowerUrl.endsWith('.stl') ? <StlResults url={url} /> : <GltfResults url={url} />}
     </group>
   );
 }

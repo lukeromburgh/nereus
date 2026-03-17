@@ -1,6 +1,7 @@
 import os
 import shutil
 from rest_framework import viewsets, parsers, status
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.conf import settings
 from .models import HydrofoilAsset, Project, SimulationRun
@@ -30,6 +31,22 @@ class SimulationRunViewSet(viewsets.ModelViewSet):
     queryset = SimulationRun.objects.all()
     serializer_class = SimulationRunSerializer
 
+    @action(detail=True, methods=['get'])
+    def analysis(self, request, pk=None):
+        run = self.get_object()
+
+        # Keep the payload explicit and stable for the frontend sync-loop.
+        return Response(
+            {
+                'id': run.id,
+                'status': run.status,
+                'result_sequence_path': run.result_sequence_path,
+                'frame_mapping': run.frame_mapping or [],
+                'metrics_series': run.metrics_series or [],
+                'convergence_series': run.convergence_series or [],
+            }
+        )
+
     def perform_create(self, serializer):
         with transaction.atomic():
             instance = serializer.save(status=SimulationRun.StatusChoices.PENDING)
@@ -40,10 +57,18 @@ class SimulationRunViewSet(viewsets.ModelViewSet):
                 sim_dir = os.path.join(settings.BASE_DIR.parent, 'data', 'simulations', str(instance.id), 'constant', 'triSurface')
                 os.makedirs(sim_dir, exist_ok=True)
                 
-                # Copy the STL from MEDIA_ROOT to the OpenFOAM designated location
+                # Copy the asset into the OpenFOAM case.
+                # OpenFOAM/snappyHexMesh consumes STL; for non-STL assets we copy as foil_input.<ext>
+                # and let the worker convert to foil.stl during preflight.
                 source_path = instance.asset.file.path
-                dest_path = os.path.join(sim_dir, 'foil.stl')
-                shutil.copy2(source_path, dest_path)
+                _, ext = os.path.splitext(source_path)
+                ext = (ext or '').lower()
+
+                dest_input_path = os.path.join(sim_dir, f"foil_input{ext}")
+                shutil.copy2(source_path, dest_input_path)
+
+                if ext == '.stl':
+                    shutil.copy2(source_path, os.path.join(sim_dir, 'foil.stl'))
             
             # Initiate Celery Handshake
             transaction.on_commit(lambda: run_hydro_simulation.delay(instance.id))

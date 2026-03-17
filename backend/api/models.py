@@ -42,6 +42,20 @@ class SimulationRun(models.Model):
     water_density = models.FloatField(default=1025.0, help_text="Water density in kg/m^3 (default 1025 for seawater)")
     wave_height = models.FloatField(help_text="Wave height in meters")
 
+    # Meshing
+    mesh_density = models.FloatField(
+        default=1.0,
+        help_text="Dimensionless base-mesh density multiplier (higher = finer base mesh)",
+    )
+
+    # Post-processing / slicing
+    slice_axis = models.CharField(
+        max_length=1,
+        choices=[('x', 'X'), ('y', 'Y'), ('z', 'Z')],
+        default='y',
+        help_text="Axis normal for the exported analysis slice (x/y/z)",
+    )
+
     # Status
     status = models.CharField(
         max_length=20,
@@ -51,6 +65,27 @@ class SimulationRun(models.Model):
     
     current_logs = models.TextField(blank=True, null=True, help_text="Last 5 lines of solver output")
     result_mesh_path = models.CharField(max_length=512, blank=True, null=True, help_text="Path to the reduced GLTF result")
+
+    # Temporal results ("Temporal Geometry Pipeline")
+    # `frame_mapping` is the authoritative sync-map between frame_index -> iteration/time -> metrics.
+    result_sequence_path = models.CharField(
+        max_length=512,
+        blank=True,
+        null=True,
+        help_text="Path to the temporal results manifest (JSON) for playback",
+    )
+    frame_mapping = models.JSONField(
+        default=list,
+        help_text="List of per-frame mappings with URLs and metrics (frame_index -> iteration/time -> metrics)",
+    )
+    metrics_series = models.JSONField(
+        default=list,
+        help_text="Per-frame metrics time-series aligned with frame_index for synchronized charts",
+    )
+    convergence_series = models.JSONField(
+        default=list,
+        help_text="Residual/convergence series for the convergence plot",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

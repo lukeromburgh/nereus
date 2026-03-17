@@ -1,7 +1,16 @@
-FROM python:3.10-slim
+FROM openfoam/openfoam11-paraview510
+
 USER root
-RUN apt-get update && apt-get install -y python3-pip libgl1-mesa-glx
-RUN pip install celery redis pyvista meshio jinja2 requests
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	python3 \
+	python3-pip \
+	&& rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir --upgrade pip \
+	&& pip3 install --no-cache-dir celery redis pyvista meshio jinja2 requests trimesh pygltflib
+
 COPY . /app
 WORKDIR /app
-CMD ["celery", "-A", "tasks", "worker", "--loglevel=info"]
+
+CMD ["bash", "-lc", "source /opt/openfoam11/etc/bashrc && celery -A tasks worker --loglevel=info"]
