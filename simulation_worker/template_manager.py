@@ -9,12 +9,12 @@ FoamFile { version 2.0; format ascii; class volVectorField; object U; }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 dimensions      [0 1 -1 0 0 0 0];
-internalField   uniform ({{ velocity }} 0 0);
+internalField   uniform ({{ ux }} 0 {{ uz }});
 
 boundaryField {
     inlet {
         type            fixedValue;
-        value           uniform ({{ velocity }} 0 0);
+        value           uniform ({{ ux }} 0 {{ uz }});
     }
     outlet {
         type            zeroGradient;
@@ -142,8 +142,8 @@ functions
         rho             rhoInf;
         rhoInf          {{ water_density }};
 
-        // Center of rotation; keep origin for MVP
-        CofR            (0 0 0);
+        // Center of rotation from user-defined center of gravity
+        CofR            ({{ cofr_x }} {{ cofr_y }} {{ cofr_z }});
 
         writeControl    runTime;
         writeInterval   1;
@@ -191,6 +191,11 @@ interpolationSchemes
 snGradSchemes
 {
     default         corrected;
+}
+
+wallDist
+{
+    method          meshWave;
 }
 """
 
@@ -467,14 +472,26 @@ class TemplateManager:
         domain=None,
         mesh_cells=None,
         nu=1e-6,
+        angle_of_attack=0.0,
+        center_of_gravity=(0, 0, 0),
     ):
         """
         Generates the initialized OpenFOAM dict structures based on user inputs.
         """
-        logger.info(f"Writing Configuration Dicts for Case: Velocity={velocity}, Density={water_density}")
+        import math
+
+        aoa_rad = math.radians(float(angle_of_attack))
+        u_mag = max(abs(float(velocity)), 0.01)
+        ux = u_mag * math.cos(aoa_rad)
+        uz = -u_mag * math.sin(aoa_rad)  # negative: positive AoA tilts flow downward
+
+        logger.info(
+            f"Writing Configuration Dicts for Case: Velocity={velocity}, AoA={angle_of_attack}°, "
+            f"Ux={ux:.4f}, Uz={uz:.4f}, Density={water_density}"
+        )
         
-        # 1. Write the Velocity (U) dict
-        self.write_file("0/U", U_TEMPLATE, {"velocity": velocity})
+        # 1. Write the Velocity (U) dict with AoA-decomposed components
+        self.write_file("0/U", U_TEMPLATE, {"ux": f"{ux:.6g}", "uz": f"{uz:.6g}"})
         
         # 2. Write the Pressure (p) dict (Required to prevent solver crash)
         self.write_file("0/p", P_TEMPLATE, {})
@@ -483,10 +500,8 @@ class TemplateManager:
         # Compute inlet turbulence quantities from freestream velocity.
         # TI = 5% turbulence intensity (typical for external water flows)
         # L_turb = 0.07 * L_ref; use a conservative reference length of 0.1m
-        import math
         ti = 0.05
         l_ref = 0.1
-        u_mag = max(abs(float(velocity)), 0.01)
         k_val = 1.5 * (ti * u_mag) ** 2
         omega_val = math.sqrt(k_val) / (0.09 ** 0.25 * 0.07 * l_ref)
         nut_val = k_val / max(omega_val, 1e-10)
@@ -495,7 +510,8 @@ class TemplateManager:
         self.write_file("0/omega", OMEGA_TEMPLATE, {"omega": f"{omega_val:.6g}"})
         self.write_file("0/nut", NUT_TEMPLATE, {"nut": f"{nut_val:.6g}"})
         
-        # 3. Write the controlDict (The simulation brain)
+        # 4. Write the controlDict (The simulation brain)
+        cofr = center_of_gravity if center_of_gravity else (0, 0, 0)
         self.write_file(
             "system/controlDict",
             CONTROL_DICT_TEMPLATE,
@@ -503,6 +519,9 @@ class TemplateManager:
                 "max_iterations": max_iterations,
                 "write_interval": write_interval,
                 "water_density": water_density,
+                "cofr_x": cofr[0],
+                "cofr_y": cofr[1],
+                "cofr_z": cofr[2],
             },
         )
 

@@ -633,12 +633,11 @@ def post_process_results_sequence(case_dir, sim_id, *, frame_count=10, slice_axi
                 return None
 
             try:
-                contours = sampled.contour(isosurfaces=20, scalars=scalars_name)
+                contours = sampled.contour(isosurfaces=30, scalars=scalars_name)
                 if contours is None or int(getattr(contours, "n_cells", 0)) <= 0:
                     return None
-                # Make contours visibly thick in the viewport. The previous value often produced
-                # sub-pixel tubes after camera-fit, making the overlay appear "missing".
-                r = _tube_radius_from_bounds(sampled.bounds, 0.015)
+                # Make contours visible but not overwhelming.
+                r = _tube_radius_from_bounds(sampled.bounds, 0.004)
                 tubed = contours.tube(radius=r, n_sides=12)
                 return tubed.triangulate()
             except Exception:
@@ -732,7 +731,7 @@ def post_process_results_sequence(case_dir, sim_id, *, frame_count=10, slice_axi
 
                 # Make streamlines visibly thick in the viewport; keep tri-count controlled by
                 # streamline count/steps + decimation (see below).
-                r = _tube_radius_from_bounds(volume.bounds, 0.006)
+                r = _tube_radius_from_bounds(volume.bounds, 0.002)
                 tubed = streams.tube(radius=r, n_sides=6).triangulate()
 
                 # Best-effort decimation to keep STL payloads browser-friendly.
@@ -986,6 +985,23 @@ def run_hydro_simulation(self, sim_id):
         velocity = run_data.get('velocity', 10.0)
         density = run_data.get('water_density', 1025.0)
         mesh_density = run_data.get('mesh_density', 1.0)
+        angle_of_attack = run_data.get('angle_of_attack', 0.0)
+        center_of_gravity = run_data.get('center_of_gravity', [0, 0, 0])
+        submersion_depth = run_data.get('submersion_depth', 0.5)
+
+        try:
+            angle_of_attack = float(angle_of_attack)
+        except Exception:
+            angle_of_attack = 0.0
+
+        try:
+            submersion_depth = float(submersion_depth)
+        except Exception:
+            submersion_depth = 0.5
+        submersion_depth = max(0.0, min(10.0, submersion_depth))
+
+        if not isinstance(center_of_gravity, (list, tuple)) or len(center_of_gravity) < 3:
+            center_of_gravity = [0, 0, 0]
 
         try:
             mesh_density = float(mesh_density)
@@ -1055,6 +1071,17 @@ def run_hydro_simulation(self, sim_id):
                     y_len = max(bounds[3] - bounds[2], 1e-9)
                     z_len = max(bounds[5] - bounds[4], 1e-9)
                     characteristic_len = max(x_len, y_len, z_len)
+
+                # Translate foil downward by submersion_depth so the domain
+                # represents the foil at the correct depth below the water surface.
+                # Positive submersion_depth = foil center is below z=0 (surface).
+                if abs(submersion_depth) > 1e-9:
+                    foil_z_center = 0.5 * (bounds[4] + bounds[5])
+                    z_shift = -submersion_depth - foil_z_center
+                    foil_mesh = foil_mesh.translate([0, 0, z_shift], inplace=False)
+                    foil_mesh.save(stl_path)
+                    bounds = foil_mesh.bounds
+                    logger.info(f"Translated foil by z={z_shift:.4f} for submersion_depth={submersion_depth}")
 
                 # Build a domain around the foil so it is guaranteed to be inside the mesh.
                 upstream = 5.0 * characteristic_len
@@ -1134,6 +1161,8 @@ def run_hydro_simulation(self, sim_id):
             write_interval=5,
             domain=domain,
             mesh_cells=mesh_cells,
+            angle_of_attack=angle_of_attack,
+            center_of_gravity=center_of_gravity,
         )
 
         # Phase 2: MESHING

@@ -61,11 +61,19 @@ export function ConfigPanel() {
     waterDensity,
     meshDensity,
     sliceAxis,
+    submersionDepth,
+    mass,
+    payloadWeight,
+    centerOfGravity,
     setVelocity,
     setAoA,
     setWaterDensity,
     setMeshDensity,
     setSliceAxis,
+    setSubmersionDepth,
+    setMass,
+    setPayloadWeight,
+    setCenterOfGravity,
     startNewSim,
     status,
     projectId,
@@ -79,9 +87,10 @@ export function ConfigPanel() {
       water_density: waterDensity,
       mesh_density: meshDensity,
       slice_axis: sliceAxis,
-      mass: 100.0,
-      payload_weight: 50.0,
-      center_of_gravity: [0, 0, 0],
+      submersion_depth: submersionDepth,
+      mass: mass,
+      payload_weight: payloadWeight,
+      center_of_gravity: centerOfGravity,
       project: projectId,
       wave_height: 0.0,
     };
@@ -155,6 +164,76 @@ export function ConfigPanel() {
           unit="kg/m³"
           onChange={setWaterDensity}
         />
+
+        <SliderControl
+          label="Submersion Depth"
+          value={submersionDepth}
+          display={submersionDepth.toFixed(2)}
+          min={0}
+          max={5}
+          step={0.05}
+          disabled={isRunning}
+          unit="m"
+          onChange={setSubmersionDepth}
+          hint="Depth of foil center below surface"
+        />
+      </div>
+
+      <div className="glass-panel rounded-lg p-3 flex flex-col gap-4">
+        <span className="hud-label">Vehicle Config</span>
+
+        <SliderControl
+          label="Vehicle Mass"
+          value={mass}
+          min={10}
+          max={5000}
+          step={10}
+          disabled={isRunning}
+          unit="kg"
+          onChange={setMass}
+        />
+
+        <SliderControl
+          label="Payload Weight"
+          value={payloadWeight}
+          min={0}
+          max={2000}
+          step={5}
+          disabled={isRunning}
+          unit="kg"
+          onChange={setPayloadWeight}
+        />
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-slate-400 font-sans">
+            Center of Gravity (x, y, z)
+          </label>
+          <div className="grid grid-cols-3 gap-1.5">
+            {(["X", "Y", "Z"] as const).map((axis, i) => (
+              <div key={axis} className="flex flex-col gap-0.5">
+                <span className="text-2xs text-slate-600 text-center">
+                  {axis}
+                </span>
+                <input
+                  type="number"
+                  step={0.01}
+                  value={centerOfGravity[i]}
+                  onChange={(e) => {
+                    const next = [...centerOfGravity] as [
+                      number,
+                      number,
+                      number,
+                    ];
+                    next[i] = Number(e.target.value);
+                    setCenterOfGravity(next);
+                  }}
+                  disabled={isRunning}
+                  className="w-full rounded-md border border-hud-border bg-white/[0.03] px-2 py-1.5 text-xs text-slate-200 font-mono text-center focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/20 transition-colors"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="glass-panel rounded-lg p-3 flex flex-col gap-4">

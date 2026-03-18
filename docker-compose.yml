@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 services:
   db:
     image: postgres:15-alpine
@@ -18,7 +18,7 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - ./backend:/app
-      - shared_data:/data # Crucial for sharing CAD files with worker
+      - ./data:/data # Bind mount for sharing CAD files with worker (persists on host)
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
@@ -34,10 +34,13 @@ services:
     platform: linux/amd64
     build: ./simulation_worker
     entrypoint: ["/bin/bash", "-lc"]
-    command: ["source /opt/openfoam11/etc/bashrc && celery -A tasks worker --loglevel=info"]
+    command:
+      [
+        "source /opt/openfoam11/etc/bashrc && celery -A tasks worker --loglevel=info",
+      ]
     volumes:
       - ./simulation_worker:/app
-      - shared_data:/data # Worker reads files here, runs OpenFOAM, writes results
+      - ./data:/data # Worker reads files here, runs OpenFOAM, writes results
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
@@ -45,6 +48,3 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-
-volumes:
-  shared_data: # Local volume simulating S3 for the MVP

@@ -41,6 +41,10 @@ class SimulationRun(models.Model):
     # Environment
     water_density = models.FloatField(default=1025.0, help_text="Water density in kg/m^3 (default 1025 for seawater)")
     wave_height = models.FloatField(help_text="Wave height in meters")
+    submersion_depth = models.FloatField(
+        default=0.5,
+        help_text="Depth of the foil center below the water surface in meters",
+    )
 
     # Meshing
     mesh_density = models.FloatField(

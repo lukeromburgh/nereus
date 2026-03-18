@@ -100,11 +100,19 @@ interface SimulationState {
   waterDensity: number;
   meshDensity: number;
   sliceAxis: "x" | "y" | "z";
+  submersionDepth: number;
+  mass: number;
+  payloadWeight: number;
+  centerOfGravity: [number, number, number];
   setVelocity: (val: number) => void;
   setAoA: (val: number) => void;
   setWaterDensity: (val: number) => void;
   setMeshDensity: (val: number) => void;
   setSliceAxis: (axis: "x" | "y" | "z") => void;
+  setSubmersionDepth: (val: number) => void;
+  setMass: (val: number) => void;
+  setPayloadWeight: (val: number) => void;
+  setCenterOfGravity: (val: [number, number, number]) => void;
 
   startNewSim: (id: number) => void;
   selectSim: (id: number) => void;
@@ -214,10 +222,19 @@ export const useSimStore = create<SimulationState>((set) => ({
   waterDensity: 1025,
   meshDensity: 1.0,
   sliceAxis: "y",
+  submersionDepth: 0.5,
+  mass: 100,
+  payloadWeight: 50,
+  centerOfGravity: [0, 0, 0],
   setVelocity: (val) => set({ velocity: val }),
   setAoA: (val) => set({ aoa: val }),
   setWaterDensity: (val) => set({ waterDensity: val }),
   setMeshDensity: (val) => set({ meshDensity: val }),
+  setSliceAxis: (axis) => set({ sliceAxis: axis }),
+  setSubmersionDepth: (val) => set({ submersionDepth: val }),
+  setMass: (val) => set({ mass: val }),
+  setPayloadWeight: (val) => set({ payloadWeight: val }),
+  setCenterOfGravity: (val) => set({ centerOfGravity: val }),
   setSliceAxis: (axis) => set({ sliceAxis: axis }),
 
   startNewSim: (id) =>
