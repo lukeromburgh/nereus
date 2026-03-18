@@ -130,7 +130,7 @@ export type SimulationFrameProps = {
 export function SimulationFrame({
   activeUrl,
   neighborUrls,
-  showPressureMap,
+  showPressureMap: _showPressureMap,
   onActiveLoaded,
 }: SimulationFrameProps) {
   const cacheRef = useRef(

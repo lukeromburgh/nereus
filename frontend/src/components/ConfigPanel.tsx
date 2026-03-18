@@ -1,5 +1,58 @@
-import axios from 'axios';
-import { useSimStore } from '../store/useSimStore';
+import axios from "axios";
+import { motion } from "framer-motion";
+import { Settings, Zap, ChevronDown } from "lucide-react";
+import { useSimStore } from "../store/useSimStore";
+
+function SliderControl({
+  label,
+  value,
+  display,
+  min,
+  max,
+  step,
+  disabled,
+  unit,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: number;
+  display?: string;
+  min: number;
+  max: number;
+  step?: number;
+  disabled: boolean;
+  unit?: string;
+  onChange: (val: number) => void;
+  hint?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-baseline justify-between">
+        <label className="text-xs font-medium text-slate-400 font-sans">
+          {label}
+        </label>
+        <div className="flex items-baseline gap-1">
+          <span className="text-xs font-semibold text-accent-glow font-mono tabular-nums">
+            {display ?? value}
+          </span>
+          {unit && <span className="text-2xs text-slate-600">{unit}</span>}
+        </div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        disabled={disabled}
+        className="slider-aerospace"
+      />
+      {hint && <div className="text-2xs text-slate-600">{hint}</div>}
+    </div>
+  );
+}
 
 export function ConfigPanel() {
   const {
@@ -20,7 +73,6 @@ export function ConfigPanel() {
   } = useSimStore();
 
   const handleRunSimulation = async () => {
-    // Basic defaults mapping to the Django ViewSet definitions
     const payload: Record<string, unknown> = {
       velocity: velocity,
       angle_of_attack: aoa,
@@ -30,8 +82,8 @@ export function ConfigPanel() {
       mass: 100.0,
       payload_weight: 50.0,
       center_of_gravity: [0, 0, 0],
-      project: projectId, // MVP Assumption: Project ID 1 exists
-      wave_height: 0.0 // Added to satisfy model requirement
+      project: projectId,
+      wave_height: 0.0,
     };
 
     if (selectedAssetId) {
@@ -39,114 +91,131 @@ export function ConfigPanel() {
     }
 
     try {
-      const response = await axios.post('http://localhost:8000/api/runs/', payload);
+      const response = await axios.post(
+        "http://localhost:8000/api/runs/",
+        payload,
+      );
       startNewSim(response.data.id);
     } catch (error) {
       console.error("Failed to launch simulation", error);
-      // Fallback/UI error notification could go here
     }
   };
 
-  const isRunning = status === 'PENDING' || status === 'MESHING' || status === 'RUNNING';
+  const isRunning =
+    status === "PENDING" || status === "MESHING" || status === "RUNNING";
   const canRun = !!selectedAssetId && !isRunning;
 
   return (
-    <div className="flex flex-col gap-4">
-      <h2 className="text-xl font-bold text-slate-200">Configuration</h2>
-      
-      <div className="flex flex-col gap-2">
-        <div className="flex justify-between items-center">
-            <label className="text-sm font-semibold text-slate-400">Velocity (m/s)</label>
-            <span className="text-xs text-blue-400 font-mono">{velocity}</span>
-        </div>
-        <input 
-          type="range" min="1" max="50" 
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 20 }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
+      className="flex flex-col gap-4"
+    >
+      {/* Section header */}
+      <div className="flex items-center gap-2">
+        <Settings className="h-4 w-4 text-accent-cyan" />
+        <h2 className="text-sm font-semibold text-slate-200 font-sans tracking-wide uppercase">
+          Configuration
+        </h2>
+      </div>
+
+      {/* Parameters */}
+      <div className="glass-panel rounded-lg p-3 flex flex-col gap-4">
+        <span className="hud-label">Flow Parameters</span>
+
+        <SliderControl
+          label="Velocity"
           value={velocity}
-          onChange={(e) => setVelocity(Number(e.target.value))}
+          min={1}
+          max={50}
           disabled={isRunning}
-          className="w-full" 
+          unit="m/s"
+          onChange={setVelocity}
         />
-      </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex justify-between items-center">
-            <label className="text-sm font-semibold text-slate-400">Angle of Attack (°)</label>
-            <span className="text-xs text-blue-400 font-mono">{aoa}</span>
-        </div>
-        <input 
-          type="range" min="-15" max="15" 
+        <SliderControl
+          label="Angle of Attack"
           value={aoa}
-          onChange={(e) => setAoA(Number(e.target.value))}
+          min={-15}
+          max={15}
           disabled={isRunning}
-          className="w-full" 
+          unit="°"
+          onChange={setAoA}
         />
-      </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex justify-between items-center">
-          <label className="text-sm font-semibold text-slate-400">Water Density (kg/m³)</label>
-          <span className="text-xs text-blue-400 font-mono">{waterDensity}</span>
-        </div>
-        <input
-          type="range"
-          min="900"
-          max="1200"
-          step="5"
+        <SliderControl
+          label="Water Density"
           value={waterDensity}
-          onChange={(e) => setWaterDensity(Number(e.target.value))}
+          min={900}
+          max={1200}
+          step={5}
           disabled={isRunning}
-          className="w-full"
+          unit="kg/m³"
+          onChange={setWaterDensity}
         />
       </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex justify-between items-center">
-          <label className="text-sm font-semibold text-slate-400">Mesh Density</label>
-          <span className="text-xs text-blue-400 font-mono">{meshDensity.toFixed(2)}×</span>
-        </div>
-        <input
-          type="range"
-          min="0.5"
-          max="2.0"
-          step="0.05"
+      <div className="glass-panel rounded-lg p-3 flex flex-col gap-4">
+        <span className="hud-label">Mesh Settings</span>
+
+        <SliderControl
+          label="Mesh Density"
           value={meshDensity}
-          onChange={(e) => setMeshDensity(Number(e.target.value))}
+          display={`${meshDensity.toFixed(2)}×`}
+          min={0.5}
+          max={2.0}
+          step={0.05}
           disabled={isRunning}
-          className="w-full"
+          onChange={setMeshDensity}
+          hint="Higher values refine the base mesh"
         />
-        <div className="text-xs text-slate-500">
-          Higher values refine the base mesh (capped).
+
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-baseline justify-between">
+            <label className="text-xs font-medium text-slate-400 font-sans">
+              Slice Axis
+            </label>
+            <span className="text-xs font-semibold text-accent-glow font-mono">
+              {sliceAxis.toUpperCase()}
+            </span>
+          </div>
+          <div className="relative">
+            <select
+              value={sliceAxis}
+              onChange={(e) => setSliceAxis(e.target.value as "x" | "y" | "z")}
+              disabled={isRunning}
+              className="w-full appearance-none rounded-md border border-hud-border bg-white/[0.03] px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/20 transition-colors"
+            >
+              <option value="x">X-Axis</option>
+              <option value="y">Y-Axis</option>
+              <option value="z">Z-Axis</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex justify-between items-center">
-          <label className="text-sm font-semibold text-slate-400">Slice Axis</label>
-          <span className="text-xs text-blue-400 font-mono">{sliceAxis.toUpperCase()}</span>
-        </div>
-        <select
-          value={sliceAxis}
-          onChange={(e) => setSliceAxis(e.target.value as 'x' | 'y' | 'z')}
-          disabled={isRunning}
-          className="w-full rounded border border-slate-700 bg-black/30 px-2 py-2 text-slate-100"
-        >
-          <option value="x">X</option>
-          <option value="y">Y</option>
-          <option value="z">Z</option>
-        </select>
-        <div className="text-xs text-slate-500">Axis-aligned slice normal (X/Y/Z).</div>
-      </div>
-
-      <button 
+      {/* Run button */}
+      <button
         onClick={handleRunSimulation}
         disabled={!canRun}
-        className={`mt-4 font-bold py-2 px-4 rounded transition-colors ${
-          !canRun 
-            ? 'bg-slate-600 text-slate-400 cursor-not-allowed' 
-            : 'bg-blue-600 hover:bg-blue-500 text-white'
-        }`}>
-        {isRunning ? 'Calculating...' : selectedAssetId ? 'Run Simulation' : 'Upload an Asset to Run'}
+        className={`group relative overflow-hidden rounded-lg py-2.5 px-4 text-sm font-semibold font-sans transition-all duration-300 ${
+          !canRun
+            ? "bg-slate-800/50 text-slate-500 cursor-not-allowed border border-slate-700/30"
+            : "bg-accent text-white hover:bg-blue-500 border border-accent/50 hover:shadow-glow-blue"
+        }`}
+      >
+        <span className="relative z-10 flex items-center justify-center gap-2">
+          <Zap className={`h-4 w-4 ${isRunning ? "animate-pulse" : ""}`} />
+          {isRunning
+            ? "Computing…"
+            : selectedAssetId
+              ? "Run Simulation"
+              : "Select an Asset"}
+        </span>
       </button>
-    </div>
+    </motion.div>
   );
 }

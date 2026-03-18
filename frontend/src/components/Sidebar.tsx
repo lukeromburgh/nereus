@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import axios from 'axios';
-import { useSimStore } from '../store/useSimStore';
+import { useEffect, useMemo, useState } from "react";
+import axios from "axios";
+import { Box, PlayCircle, Circle, Loader2 } from "lucide-react";
+import { useSimStore } from "../store/useSimStore";
 
 type HydrofoilAsset = {
   id: number;
@@ -18,17 +19,18 @@ type SimulationRun = {
   created_at: string;
 };
 
-function statusDotClass(status: string) {
-  if (status === 'RUNNING' || status === 'MESHING' || status === 'PENDING') {
-    return 'bg-blue-400 animate-pulse';
-  }
-  if (status === 'COMPLETED') {
-    return 'bg-green-400';
-  }
-  if (status === 'FAILED') {
-    return 'bg-orange-400';
-  }
-  return 'bg-slate-500';
+function statusDotColor(status: string) {
+  if (status === "RUNNING" || status === "MESHING" || status === "PENDING")
+    return "text-accent-glow";
+  if (status === "COMPLETED") return "text-accent-emerald";
+  if (status === "FAILED") return "text-accent-rose";
+  return "text-slate-600";
+}
+
+function statusDotAnim(status: string) {
+  if (status === "RUNNING" || status === "MESHING" || status === "PENDING")
+    return "animate-pulse";
+  return "";
 }
 
 interface SidebarProps {
@@ -36,7 +38,14 @@ interface SidebarProps {
 }
 
 export function Sidebar({ refreshNonce }: SidebarProps) {
-  const { projectId, selectedAssetId, setSelectedAsset, setSelectedAssetId, selectSim, updateSim } = useSimStore();
+  const {
+    projectId,
+    selectedAssetId,
+    setSelectedAsset,
+    setSelectedAssetId,
+    selectSim,
+    updateSim,
+  } = useSimStore();
 
   const [assets, setAssets] = useState<HydrofoilAsset[]>([]);
   const [runs, setRuns] = useState<SimulationRun[]>([]);
@@ -49,13 +58,15 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
       setLoading(true);
       try {
         const [assetsResp, runsResp] = await Promise.all([
-          axios.get<HydrofoilAsset[]>('http://localhost:8000/api/assets/'),
-          axios.get<SimulationRun[]>('http://localhost:8000/api/runs/'),
+          axios.get<HydrofoilAsset[]>("http://localhost:8000/api/assets/"),
+          axios.get<SimulationRun[]>("http://localhost:8000/api/runs/"),
         ]);
 
         if (cancelled) return;
 
-        const assetsForProject = assetsResp.data.filter((a) => a.project === projectId);
+        const assetsForProject = assetsResp.data.filter(
+          (a) => a.project === projectId,
+        );
         const runsForProject = runsResp.data
           .filter((r) => r.project === projectId)
           .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -67,7 +78,7 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
           setSelectedAsset(assetsForProject[0]);
         }
       } catch (err) {
-        console.error('Failed loading sidebar data', err);
+        console.error("Failed loading sidebar data", err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -81,31 +92,48 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
 
   const selectedAsset = useMemo(
     () => assets.find((a) => a.id === selectedAssetId) || null,
-    [assets, selectedAssetId]
+    [assets, selectedAssetId],
   );
 
   const handleSelectRun = async (runId: number) => {
     selectSim(runId);
     try {
-      const { data } = await axios.get(`http://localhost:8000/api/runs/${runId}/`);
+      const { data } = await axios.get(
+        `http://localhost:8000/api/runs/${runId}/`,
+      );
       updateSim(data);
     } catch (err) {
-      console.error('Failed to load run', err);
+      console.error("Failed to load run", err);
     }
   };
 
   return (
-    <div className="p-4">
-      <div className="mb-6">
-        <h2 className="text-xl font-bold mb-2 text-slate-200">Assets</h2>
-        <div className="text-xs text-slate-400 mb-3">
-          Selected: <span className="text-slate-200">{selectedAsset?.name || 'None'}</span>
+    <div className="p-3 flex flex-col gap-5 scrollbar-dark">
+      {/* Assets */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <Box className="h-3.5 w-3.5 text-accent-cyan" />
+          <span className="hud-label">Assets</span>
         </div>
 
+        {selectedAsset && (
+          <div className="mb-3 px-2 py-1.5 rounded-md bg-accent/5 border border-accent/15">
+            <div className="text-2xs text-slate-500">Active</div>
+            <div className="text-xs font-medium text-slate-200 truncate">
+              {selectedAsset.name}
+            </div>
+          </div>
+        )}
+
         {loading && assets.length === 0 ? (
-          <div className="text-sm text-slate-400">Loading assets…</div>
+          <div className="flex items-center gap-2 text-2xs text-slate-600">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Loading…
+          </div>
         ) : assets.length === 0 ? (
-          <div className="text-sm text-slate-400">No assets yet. Use “Upload Asset” above.</div>
+          <div className="text-2xs text-slate-600 px-1">
+            No assets yet. Upload one above.
+          </div>
         ) : (
           <div className="flex flex-col gap-1">
             {assets.map((asset) => {
@@ -114,14 +142,16 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
                 <button
                   key={asset.id}
                   onClick={() => setSelectedAsset(asset)}
-                  className={`text-left text-sm px-2 py-2 rounded border transition-colors ${
+                  className={`text-left w-full px-2.5 py-2 rounded-md text-xs transition-all duration-200 ${
                     isSelected
-                      ? 'border-blue-600 bg-blue-900/20 text-slate-100'
-                      : 'border-slate-700 bg-slate-900/20 hover:bg-slate-900/40 text-slate-200'
+                      ? "bg-accent/10 border border-accent/25 text-slate-100"
+                      : "border border-transparent hover:bg-white/[0.03] hover:border-hud-border text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  <div className="font-bold truncate">{asset.name}</div>
-                  <div className="text-xs text-slate-400 truncate">{asset.file}</div>
+                  <div className="font-medium truncate">{asset.name}</div>
+                  <div className="text-2xs text-slate-600 truncate mt-0.5">
+                    {asset.file}
+                  </div>
                 </button>
               );
             })}
@@ -129,30 +159,60 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
         )}
       </div>
 
+      {/* Divider */}
+      <div className="h-px bg-hud-border" />
+
+      {/* Simulation Runs */}
       <div>
-        <h2 className="text-xl font-bold mb-2 text-slate-200">Simulation Runs</h2>
+        <div className="flex items-center gap-2 mb-3">
+          <PlayCircle className="h-3.5 w-3.5 text-accent-cyan" />
+          <span className="hud-label">Runs</span>
+          {runs.length > 0 && (
+            <span className="text-2xs text-slate-600 font-mono ml-auto">
+              {runs.length}
+            </span>
+          )}
+        </div>
 
         {loading && runs.length === 0 ? (
-          <div className="text-sm text-slate-400">Loading runs…</div>
+          <div className="flex items-center gap-2 text-2xs text-slate-600">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Loading…
+          </div>
         ) : runs.length === 0 ? (
-          <div className="text-sm text-slate-400">No runs yet.</div>
+          <div className="text-2xs text-slate-600 px-1">
+            No simulations yet.
+          </div>
         ) : (
           <div className="flex flex-col gap-1">
             {runs.slice(0, 30).map((run) => (
               <button
                 key={run.id}
                 onClick={() => handleSelectRun(run.id)}
-                className="text-left text-sm px-2 py-2 rounded border border-slate-700 bg-slate-900/20 hover:bg-slate-900/40 transition-colors"
+                className="text-left w-full px-2.5 py-2 rounded-md border border-transparent hover:bg-white/[0.03] hover:border-hud-border transition-all duration-200 group"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 rounded-full ${statusDotClass(run.status)}`} />
-                    <div className="font-bold text-slate-200">Run #{run.id}</div>
+                    <Circle
+                      className={`h-2 w-2 fill-current ${statusDotColor(run.status)} ${statusDotAnim(run.status)}`}
+                    />
+                    <span className="text-xs font-medium text-slate-300 group-hover:text-slate-100">
+                      #{run.id}
+                    </span>
                   </div>
-                  <div className="text-xs text-slate-400">{run.status}</div>
+                  <span
+                    className={`text-2xs font-medium ${statusDotColor(run.status)}`}
+                  >
+                    {run.status}
+                  </span>
                 </div>
-                <div className="text-xs text-slate-500 truncate">
-                  Asset: {run.asset ?? 'None'} • {new Date(run.created_at).toLocaleString()}
+                <div className="text-2xs text-slate-600 mt-0.5 truncate pl-4">
+                  {new Date(run.created_at).toLocaleString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </div>
               </button>
             ))}

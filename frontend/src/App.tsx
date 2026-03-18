@@ -1,28 +1,35 @@
-import { useEffect, useState } from 'react';
-import axios from 'axios';
-import { Sidebar } from './components/Sidebar';
-import { TopNavbar } from './components/TopNavbar';
-import { Viewport } from './components/Viewport';
-import { ConfigPanel } from './components/ConfigPanel';
-import { LogConsole } from './components/LogConsole';
-import { AnalysisPanel } from './components/AnalysisPanel';
-import { useSimStore } from './store/useSimStore';
+import { useEffect, useState } from "react";
+import axios from "axios";
+import { AnimatePresence, motion } from "framer-motion";
+import { Sidebar } from "./components/Sidebar";
+import { TopNavbar } from "./components/TopNavbar";
+import { Viewport } from "./components/Viewport";
+import { ConfigPanel } from "./components/ConfigPanel";
+import { LogConsole } from "./components/LogConsole";
+import { AnalysisPanel } from "./components/AnalysisPanel";
+import { useSimStore } from "./store/useSimStore";
 
 export default function App() {
-  const { activeSimId, status, updateSim, setAnalysisData, clearAnalysis } = useSimStore();
+  const { activeSimId, status, updateSim, setAnalysisData, clearAnalysis } =
+    useSimStore();
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   // The Observer: Polling Hook natively integrated into the Layout
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
 
-    if (activeSimId && (status === 'PENDING' || status === 'RUNNING' || status === 'MESHING')) {
+    if (
+      activeSimId &&
+      (status === "PENDING" || status === "RUNNING" || status === "MESHING")
+    ) {
       interval = setInterval(async () => {
         try {
-          const { data } = await axios.get(`http://localhost:8000/api/runs/${activeSimId}/`);
+          const { data } = await axios.get(
+            `http://localhost:8000/api/runs/${activeSimId}/`,
+          );
           updateSim(data);
-          
-          if (data.status === 'COMPLETED' || data.status === 'FAILED') {
+
+          if (data.status === "COMPLETED" || data.status === "FAILED") {
             clearInterval(interval);
           }
         } catch (error) {
@@ -46,16 +53,18 @@ export default function App() {
       }
 
       // Only fetch analysis once the run is completed (or if it was already completed when selected).
-      if (status !== 'COMPLETED') {
+      if (status !== "COMPLETED") {
         clearAnalysis();
         return;
       }
 
       try {
-        const { data } = await axios.get(`http://localhost:8000/api/runs/${activeSimId}/analysis/`);
+        const { data } = await axios.get(
+          `http://localhost:8000/api/runs/${activeSimId}/analysis/`,
+        );
         if (!cancelled) setAnalysisData(data);
       } catch (err) {
-        console.error('Failed to load analysis payload', err);
+        console.error("Failed to load analysis payload", err);
         if (!cancelled) clearAnalysis();
       }
     }
@@ -67,14 +76,14 @@ export default function App() {
   }, [activeSimId, status, setAnalysisData, clearAnalysis]);
 
   return (
-    <div className="flex h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden font-mono flex-col">
+    <div className="flex h-screen w-screen bg-surface text-slate-100 overflow-hidden font-sans flex-col">
       <header>
         <TopNavbar onRefresh={() => setRefreshNonce((n) => n + 1)} />
       </header>
 
       <div className="flex flex-1 overflow-hidden">
         {/* 1. Left Sidebar: Assets + Run History */}
-        <aside className="w-72 border-r border-slate-800 bg-slate-900/40 overflow-y-auto">
+        <aside className="w-64 border-r border-hud-border bg-surface-solid/60 backdrop-blur-md overflow-y-auto scrollbar-dark">
           <Sidebar refreshNonce={refreshNonce} />
         </aside>
 
@@ -84,15 +93,37 @@ export default function App() {
             <Viewport />
           </div>
 
-          {/* Bottom: The Log Stream we built in Django */}
-          <div className="h-56 border-t border-slate-800 bg-black/80">
+          {/* Bottom: The Log Stream */}
+          <div className="h-56 border-t border-hud-border bg-surface-solid/80 backdrop-blur-sm">
             <LogConsole />
           </div>
         </main>
 
         {/* 3. Right: Simulation Controls */}
-        <aside className="w-80 border-l border-slate-800 bg-slate-900/40 p-4 overflow-y-auto">
-          {status === 'COMPLETED' ? <AnalysisPanel /> : <ConfigPanel />}
+        <aside className="w-80 border-l border-hud-border bg-surface-solid/60 backdrop-blur-md overflow-y-auto scrollbar-dark p-4">
+          <AnimatePresence mode="wait">
+            {status === "COMPLETED" ? (
+              <motion.div
+                key="analysis"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <AnalysisPanel />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="config"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ConfigPanel />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </aside>
       </div>
     </div>

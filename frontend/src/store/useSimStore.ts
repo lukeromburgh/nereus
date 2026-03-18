@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
 export type FrameMetrics = {
   Fx: number | null;
@@ -66,9 +66,23 @@ interface SimulationState {
   showFlowLines: boolean;
   showPressureMap: boolean;
   showVorticity: boolean;
+  showStreamlines: boolean;
   toggleFlowLines: () => void;
   togglePressureMap: () => void;
   toggleVorticity: () => void;
+  toggleStreamlines: () => void;
+
+  // Scientific colormap
+  colormap: "turbo" | "viridis" | "inferno" | "plasma" | "magma" | "coolwarm";
+  setColormap: (
+    cm: "turbo" | "viridis" | "inferno" | "plasma" | "magma" | "coolwarm",
+  ) => void;
+
+  // Post-processing
+  enableBloom: boolean;
+  enableSSAO: boolean;
+  toggleBloom: () => void;
+  toggleSSAO: () => void;
 
   // MVP Project/Asset context
   projectId: number;
@@ -76,19 +90,21 @@ interface SimulationState {
   selectedAssetName: string | null;
   selectedAssetFileUrl: string | null;
   setSelectedAssetId: (id: number | null) => void;
-  setSelectedAsset: (asset: { id: number; name?: string | null; file?: string | null } | null) => void;
-  
+  setSelectedAsset: (
+    asset: { id: number; name?: string | null; file?: string | null } | null,
+  ) => void;
+
   // Simulation Inputs
   velocity: number;
   aoa: number;
   waterDensity: number;
   meshDensity: number;
-  sliceAxis: 'x' | 'y' | 'z';
+  sliceAxis: "x" | "y" | "z";
   setVelocity: (val: number) => void;
   setAoA: (val: number) => void;
   setWaterDensity: (val: number) => void;
   setMeshDensity: (val: number) => void;
-  setSliceAxis: (axis: 'x' | 'y' | 'z') => void;
+  setSliceAxis: (axis: "x" | "y" | "z") => void;
 
   startNewSim: (id: number) => void;
   selectSim: (id: number) => void;
@@ -97,8 +113,8 @@ interface SimulationState {
 
 export const useSimStore = create<SimulationState>((set) => ({
   activeSimId: null,
-  status: 'IDLE',
-  logs: '',
+  status: "IDLE",
+  logs: "",
   resultMeshPath: null,
 
   resultSequencePath: null,
@@ -156,15 +172,30 @@ export const useSimStore = create<SimulationState>((set) => ({
       return { currentFrame: Math.max(0, Math.min(total - 1, next)) };
     }),
   togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),
-  setPlaybackSpeed: (fps) => set(() => ({ playbackSpeed: Math.max(0.25, Math.min(60, fps)) })),
+  setPlaybackSpeed: (fps) =>
+    set(() => ({ playbackSpeed: Math.max(0.25, Math.min(60, fps)) })),
   toggleLoop: () => set((state) => ({ loopPlayback: !state.loopPlayback })),
 
   showFlowLines: false,
   showPressureMap: true,
   showVorticity: false,
-  toggleFlowLines: () => set((state) => ({ showFlowLines: !state.showFlowLines })),
-  togglePressureMap: () => set((state) => ({ showPressureMap: !state.showPressureMap })),
-  toggleVorticity: () => set((state) => ({ showVorticity: !state.showVorticity })),
+  showStreamlines: false,
+  toggleFlowLines: () =>
+    set((state) => ({ showFlowLines: !state.showFlowLines })),
+  togglePressureMap: () =>
+    set((state) => ({ showPressureMap: !state.showPressureMap })),
+  toggleVorticity: () =>
+    set((state) => ({ showVorticity: !state.showVorticity })),
+  toggleStreamlines: () =>
+    set((state) => ({ showStreamlines: !state.showStreamlines })),
+
+  colormap: "turbo",
+  setColormap: (cm) => set({ colormap: cm }),
+
+  enableBloom: true,
+  enableSSAO: true,
+  toggleBloom: () => set((state) => ({ enableBloom: !state.enableBloom })),
+  toggleSSAO: () => set((state) => ({ enableSSAO: !state.enableSSAO })),
 
   projectId: 1,
   selectedAssetId: null,
@@ -177,48 +208,50 @@ export const useSimStore = create<SimulationState>((set) => ({
       selectedAssetName: asset?.name ?? null,
       selectedAssetFileUrl: asset?.file ?? null,
     })),
-  
+
   velocity: 10,
   aoa: 5,
   waterDensity: 1025,
   meshDensity: 1.0,
-  sliceAxis: 'y',
+  sliceAxis: "y",
   setVelocity: (val) => set({ velocity: val }),
   setAoA: (val) => set({ aoa: val }),
   setWaterDensity: (val) => set({ waterDensity: val }),
   setMeshDensity: (val) => set({ meshDensity: val }),
   setSliceAxis: (axis) => set({ sliceAxis: axis }),
 
-  startNewSim: (id) => set({ 
-    activeSimId: id, 
-    status: 'PENDING', 
-    logs: 'Request sent to server...', 
-    resultMeshPath: null,
-    resultSequencePath: null,
-    frameMapping: [],
-    metricsSeries: [],
-    convergenceSeries: [],
-    totalFrames: 0,
-    currentFrame: 0,
-    isPlaying: false,
-  }),
-  selectSim: (id) => set({
-    activeSimId: id,
-    status: 'LOADING',
-    logs: 'Loading run...',
-    resultMeshPath: null,
-    resultSequencePath: null,
-    frameMapping: [],
-    metricsSeries: [],
-    convergenceSeries: [],
-    totalFrames: 0,
-    currentFrame: 0,
-    isPlaying: false,
-  }),
+  startNewSim: (id) =>
+    set({
+      activeSimId: id,
+      status: "PENDING",
+      logs: "Request sent to server...",
+      resultMeshPath: null,
+      resultSequencePath: null,
+      frameMapping: [],
+      metricsSeries: [],
+      convergenceSeries: [],
+      totalFrames: 0,
+      currentFrame: 0,
+      isPlaying: false,
+    }),
+  selectSim: (id) =>
+    set({
+      activeSimId: id,
+      status: "LOADING",
+      logs: "Loading run...",
+      resultMeshPath: null,
+      resultSequencePath: null,
+      frameMapping: [],
+      metricsSeries: [],
+      convergenceSeries: [],
+      totalFrames: 0,
+      currentFrame: 0,
+      isPlaying: false,
+    }),
   updateSim: (data) =>
     set(() => ({
       status: data.status,
-      logs: data.current_logs || '',
+      logs: data.current_logs || "",
       resultMeshPath: data.result_mesh_path || null,
       resultSequencePath: data.result_sequence_path || null,
     })),

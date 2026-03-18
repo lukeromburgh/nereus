@@ -1,5 +1,85 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body { margin: 0; }
+body {
+  margin: 0;
+}
+
+/* ── Glassmorphic panel base ── */
+@layer components {
+  .glass-panel {
+    @apply bg-surface border border-hud-border backdrop-blur-hud shadow-glass;
+  }
+
+  .glass-panel-raised {
+    @apply bg-surface-raised border border-hud-border backdrop-blur-hud shadow-glass-raised;
+  }
+
+  /* HUD label/unit styling */
+  .hud-label {
+    @apply text-2xs font-medium uppercase tracking-[0.08em] text-slate-500;
+  }
+
+  .hud-value {
+    @apply text-sm font-semibold tabular-nums text-slate-100 font-mono;
+  }
+
+  .hud-value-lg {
+    @apply text-lg font-bold tabular-nums text-slate-50 font-mono leading-none;
+  }
+
+  .hud-unit {
+    @apply text-2xs font-normal text-slate-500 ml-0.5;
+  }
+
+  /* Custom range slider */
+  .slider-aerospace {
+    @apply appearance-none w-full h-1 bg-slate-800 rounded-full outline-none;
+  }
+  .slider-aerospace::-webkit-slider-thumb {
+    @apply appearance-none w-3 h-3 bg-accent rounded-full cursor-pointer
+           shadow-glow-blue transition-shadow duration-200;
+  }
+  .slider-aerospace::-webkit-slider-thumb:hover {
+    @apply shadow-[0_0_12px_rgba(59,130,246,0.5)];
+  }
+  .slider-aerospace::-moz-range-thumb {
+    @apply w-3 h-3 bg-accent rounded-full cursor-pointer border-0
+           shadow-glow-blue;
+  }
+  .slider-aerospace:disabled {
+    @apply opacity-40 cursor-not-allowed;
+  }
+
+  /* Scrollbar styling for dark panels */
+  .scrollbar-dark::-webkit-scrollbar {
+    width: 4px;
+  }
+  .scrollbar-dark::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-dark::-webkit-scrollbar-thumb {
+    @apply bg-slate-700/50 rounded-full;
+  }
+  .scrollbar-dark::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-600/60;
+  }
+}
+
+/* ── Subtle scanline effect for HUD authenticity ── */
+@layer utilities {
+  .scanlines::after {
+    content: "";
+    @apply pointer-events-none absolute inset-0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.03) 2px,
+      rgba(0, 0, 0, 0.03) 4px
+    );
+  }
+}

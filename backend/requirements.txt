@@ -1,0 +1,6 @@
+Django==5.1.7
+djangorestframework
+celery
+redis
+django-cors-headers
+requests

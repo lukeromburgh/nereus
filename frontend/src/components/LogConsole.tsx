@@ -1,40 +1,15 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { useSimStore } from '../store/useSimStore';
-
-type ResidualPoint = {
-  p?: number;
-  Ux?: number;
-};
-
-function parseResiduals(logs: string, maxPoints = 120): ResidualPoint[] {
-  const points: ResidualPoint[] = [];
-  const lines = (logs || '').split('\n');
-
-  for (const line of lines) {
-    // Examples:
-    // smoothSolver:  Solving for Ux, Initial residual = 0.00585878, Final residual = ...
-    // GAMG:  Solving for p, Initial residual = 0.175101, Final residual = ...
-    const pMatch = line.match(/Solving for p, Initial residual = ([0-9.eE+-]+)/);
-    if (pMatch) {
-      const value = Number(pMatch[1]);
-      if (Number.isFinite(value)) points.push({ p: value });
-      continue;
-    }
-
-    const uxMatch = line.match(/Solving for Ux, Initial residual = ([0-9.eE+-]+)/);
-    if (uxMatch) {
-      const value = Number(uxMatch[1]);
-      if (Number.isFinite(value)) points.push({ Ux: value });
-    }
-  }
-
-  return points.slice(-maxPoints);
-}
+import { useEffect, useMemo, useRef } from "react";
+import { Terminal, Download, Circle } from "lucide-react";
+import { useSimStore } from "../store/useSimStore";
+import {
+  parseAllResiduals,
+  extractSeries,
+  RESIDUAL_COLORS,
+} from "../lib/residuals";
 
 function toPolyline(points: number[], width: number, height: number) {
-  if (points.length < 2) return '';
+  if (points.length < 2) return "";
 
-  // log10 scale for residuals; clamp to avoid -inf
   const safe = points.map((v) => Math.max(v, 1e-12));
   const logs = safe.map((v) => Math.log10(v));
   const minY = Math.min(...logs);
@@ -47,7 +22,7 @@ function toPolyline(points: number[], width: number, height: number) {
       const y = height - ((lv - minY) / span) * height;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
-    .join(' ');
+    .join(" ");
 }
 
 export function LogConsole() {
@@ -64,89 +39,195 @@ export function LogConsole() {
     el.scrollTop = el.scrollHeight;
   }, [logs]);
 
-  const residualPoints = useMemo(() => parseResiduals(logs), [logs]);
-  const parsedPSeries = residualPoints
-    .map((p) => p.p)
-    .filter((v): v is number => typeof v === 'number');
-  const parsedUxSeries = residualPoints
-    .map((p) => p.Ux)
-    .filter((v): v is number => typeof v === 'number');
-
-  // Prefer the persisted convergence series once available (completed runs),
-  // since streamed logs may be truncated.
-  const pSeries = (convergenceSeries?.length ? convergenceSeries.map((p) => p.residual) : parsedPSeries).filter(
-    (v): v is number => typeof v === 'number' && Number.isFinite(v)
+  const residualEntries = useMemo(() => parseAllResiduals(logs), [logs]);
+  const parsedPSeries = useMemo(
+    () => extractSeries(residualEntries, "p"),
+    [residualEntries],
   );
+  const parsedUxSeries = useMemo(
+    () => extractSeries(residualEntries, "Ux"),
+    [residualEntries],
+  );
+
+  const pSeries = (
+    convergenceSeries?.length
+      ? convergenceSeries.map((p) => p.residual)
+      : parsedPSeries
+  ).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
   const uxSeries = parsedUxSeries;
 
-  const plotW = 280;
-  const plotH = 110;
+  const plotW = 260;
+  const plotH = 100;
   const pPolyline = useMemo(() => toPolyline(pSeries, plotW, plotH), [pSeries]);
-  const uxPolyline = useMemo(() => toPolyline(uxSeries, plotW, plotH), [uxSeries]);
+  const uxPolyline = useMemo(
+    () => toPolyline(uxSeries, plotW, plotH),
+    [uxSeries],
+  );
 
-  const resultUrl = resultMeshPath ? `http://localhost:8000${resultMeshPath}` : null;
+  const resultUrl = resultMeshPath
+    ? `http://localhost:8000${resultMeshPath}`
+    : null;
+
+  const statusConfig = {
+    COMPLETED: {
+      color: "text-accent-emerald",
+      bg: "bg-accent-emerald/15",
+      border: "border-accent-emerald/20",
+      label: "COMPLETED",
+    },
+    FAILED: {
+      color: "text-accent-rose",
+      bg: "bg-accent-rose/15",
+      border: "border-accent-rose/20",
+      label: "FAILED",
+    },
+    RUNNING: {
+      color: "text-accent-glow",
+      bg: "bg-accent/15",
+      border: "border-accent/20",
+      label: "RUNNING",
+    },
+    MESHING: {
+      color: "text-accent-cyan",
+      bg: "bg-accent-cyan/15",
+      border: "border-accent-cyan/20",
+      label: "MESHING",
+    },
+    PENDING: {
+      color: "text-accent-amber",
+      bg: "bg-accent-amber/15",
+      border: "border-accent-amber/20",
+      label: "PENDING",
+    },
+  } as Record<
+    string,
+    { color: string; bg: string; border: string; label: string }
+  >;
+
+  const sc = statusConfig[status] || {
+    color: "text-slate-500",
+    bg: "bg-slate-800/50",
+    border: "border-slate-700/30",
+    label: status,
+  };
 
   return (
-    <div className="h-full flex flex-col p-3 font-mono text-sm">
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-slate-400 font-bold uppercase tracking-wider">Console Output</span>
-        <span className={`px-2 py-1 rounded text-xs font-bold ${
-          status === 'COMPLETED' ? 'bg-green-900/50 text-green-400' :
-          status === 'FAILED' ? 'bg-orange-900/50 text-orange-400' :
-          status === 'RUNNING' ? 'bg-blue-900/50 text-blue-400' :
-          'bg-slate-800 text-slate-400'
-        }`}>
-          {status}
+    <div className="h-full flex flex-col p-3 font-mono text-xs">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Terminal className="h-3.5 w-3.5 text-slate-500" />
+          <span className="hud-label">Solver Output</span>
+        </div>
+        <span
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-2xs font-medium border ${sc.bg} ${sc.color} ${sc.border}`}
+        >
+          <Circle
+            className={`h-1.5 w-1.5 fill-current ${status === "RUNNING" || status === "MESHING" ? "animate-pulse" : ""}`}
+          />
+          {sc.label}
         </span>
       </div>
 
+      {/* Content area */}
       <div className="flex-1 flex gap-3 overflow-hidden">
+        {/* Log stream */}
         <div
           ref={scrollerRef}
-          className="flex-1 overflow-y-auto bg-black rounded border border-slate-800 p-2 whitespace-pre-wrap text-green-500"
+          className="flex-1 overflow-y-auto rounded-lg border border-hud-border bg-black/60 p-2.5 whitespace-pre-wrap text-[11px] leading-relaxed text-emerald-400/80 scrollbar-dark"
         >
-          {logs || 'Waiting for simulation to start...'}
+          {logs || "Waiting for simulation to start..."}
         </div>
 
-        <div className="w-[320px] shrink-0 rounded border border-slate-800 bg-slate-950/50 p-2">
-          <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Metrics</div>
-
-          <div className="rounded border border-slate-800 bg-black p-2">
-            <div className="flex items-center justify-between mb-1">
-              <div className="text-xs text-slate-400">Residuals (log scale)</div>
-              <div className="flex items-center gap-3 text-[10px] text-slate-400">
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-400" />p</span>
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-200" />Ux</span>
+        {/* Metrics sidebar */}
+        <div className="w-[300px] shrink-0 flex flex-col gap-2 overflow-y-auto scrollbar-dark">
+          {/* Residual plot */}
+          <div className="glass-panel rounded-lg p-2.5 flex-1">
+            <div className="flex items-center justify-between mb-2">
+              <span className="hud-label">Residuals</span>
+              <div className="flex items-center gap-3 text-2xs text-slate-500">
+                <span className="flex items-center gap-1">
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: RESIDUAL_COLORS.p }}
+                  />
+                  p
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: RESIDUAL_COLORS.Ux }}
+                  />
+                  Ux
+                </span>
               </div>
             </div>
             {pSeries.length + uxSeries.length < 4 ? (
-              <div className="text-xs text-slate-500">No residuals yet.</div>
+              <div className="flex items-center justify-center h-20 text-2xs text-slate-600">
+                Awaiting residual data…
+              </div>
             ) : (
-              <svg width={plotW} height={plotH} viewBox={`0 0 ${plotW} ${plotH}`} className="block">
-                <polyline points={pPolyline} fill="none" stroke="#60a5fa" strokeWidth="1.5" />
-                <polyline points={uxPolyline} fill="none" stroke="#e2e8f0" strokeWidth="1.2" opacity="0.9" />
+              <svg
+                width={plotW}
+                height={plotH}
+                viewBox={`0 0 ${plotW} ${plotH}`}
+                className="block"
+              >
+                {/* Grid lines */}
+                {[0.25, 0.5, 0.75].map((f) => (
+                  <line
+                    key={f}
+                    x1={0}
+                    y1={plotH * f}
+                    x2={plotW}
+                    y2={plotH * f}
+                    stroke="rgba(148, 163, 184, 0.06)"
+                    strokeDasharray="2 4"
+                  />
+                ))}
+                <polyline
+                  points={pPolyline}
+                  fill="none"
+                  stroke={RESIDUAL_COLORS.p}
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+                <polyline
+                  points={uxPolyline}
+                  fill="none"
+                  stroke={RESIDUAL_COLORS.Ux}
+                  strokeWidth="1.2"
+                  strokeLinejoin="round"
+                  opacity="0.7"
+                />
               </svg>
             )}
           </div>
 
-          <div className="mt-2 rounded border border-slate-800 bg-black p-2">
-            <div className="text-xs text-slate-400 mb-1">Result</div>
+          {/* Download */}
+          <div className="glass-panel rounded-lg p-2.5">
+            <span className="hud-label">Result</span>
             {resultUrl ? (
               <a
                 href={resultUrl}
-                className="inline-flex items-center justify-center w-full rounded border border-slate-700 bg-slate-900/60 hover:bg-slate-900 px-2 py-1.5 text-xs font-bold text-slate-100 transition-colors"
+                className="mt-2 flex items-center justify-center gap-2 w-full rounded-md border border-hud-border bg-white/[0.03] hover:bg-white/[0.06] px-3 py-2 text-xs font-medium text-slate-300 hover:text-slate-100 transition-all duration-200"
                 download
                 target="_blank"
                 rel="noreferrer"
               >
+                <Download className="h-3.5 w-3.5" />
                 Download Mesh
               </a>
             ) : (
-              <div className="text-xs text-slate-500">No result mesh yet.</div>
+              <div className="mt-1.5 text-2xs text-slate-600">
+                No result mesh yet
+              </div>
             )}
-            {resultMeshPath ? (
-              <div className="mt-1 text-[10px] text-slate-500 break-all">{resultMeshPath}</div>
-            ) : null}
+            {resultMeshPath && (
+              <div className="mt-1.5 text-2xs text-slate-700 break-all font-mono">
+                {resultMeshPath}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -16,9 +16,14 @@ import { useSimStore } from "../store/useSimStore";
 import { HydrofoilResults } from "../HydrofoilResults";
 import { LayerManager } from "./LayerManager";
 import { MetricHUD } from "./MetricHUD";
+import { ColorbarLegend } from "./ColorbarLegend";
 import { OverlayFrame } from "./OverlayFrame";
+import { PressureOverlay } from "./PressureOverlay";
 import { SimulationFrame } from "./SimulationFrame";
 import { TimelineController } from "./TimelineController";
+import { VorticityField } from "./VorticityField";
+import { AnimatedStreamlines } from "./AnimatedStreamlines";
+import { ScenePostProcessing } from "./ScenePostProcessing";
 
 function PlaybackSyncLoop() {
   const isPlaying = useSimStore((s) => s.isPlaying);
@@ -194,23 +199,24 @@ export function Viewport() {
   })();
 
   return (
-    <div className="w-full h-full relative">
-      <div className="pointer-events-none absolute left-3 top-3 z-10 rounded border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs text-slate-200">
+    <div className="w-full h-full relative overflow-hidden">
+      <div className="pointer-events-none absolute left-3 top-3 z-10 glass-panel px-3 py-2 text-xs font-mono">
         <div className="flex items-center gap-2">
-          <span className="text-slate-400">Run</span>
-          <span className="font-bold">{activeSimId ?? "—"}</span>
-          <span className="text-slate-600">|</span>
-          <span className="text-slate-400">Status</span>
-          <span className="font-bold">{status}</span>
+          <span className="text-slate-500">RUN</span>
+          <span className="font-bold text-slate-200">{activeSimId ?? "—"}</span>
+          <span className="text-hud-border">|</span>
+          <span className="text-slate-500">STATUS</span>
+          <span className="font-bold text-accent-cyan">{status}</span>
         </div>
         {timeLine ? (
-          <div className="mt-1 text-slate-400">{timeLine}</div>
+          <div className="mt-1 text-slate-500">{timeLine}</div>
         ) : null}
       </div>
 
       {/* Analysis overlays (Post-Run Investigation) */}
       <MetricHUD />
       <LayerManager />
+      <ColorbarLegend />
       <div className="absolute left-3 right-3 bottom-3 z-30">
         <TimelineController />
       </div>
@@ -263,16 +269,19 @@ export function Viewport() {
                 </mesh>
               )}
 
-              {/* Overlay layers (exported by worker as STL tube geometry). */}
-              <OverlayFrame
-                url={pressureLinesUrl}
-                color="#ef4444"
-                opacity={0.9}
-              />
+              {/* Overlay layers */}
+              <PressureOverlay url={pressureLinesUrl} opacity={0.88} />
               <OverlayFrame url={flowLinesUrl} color="#3b82f6" opacity={0.85} />
             </Bounds>
+
+            {/* Procedural visualization layers (outside Bounds to not affect camera fit) */}
+            <VorticityField />
+            <AnimatedStreamlines />
           </Stage>
         </Suspense>
+
+        {/* Post-processing effects */}
+        <ScenePostProcessing />
 
         {/* The playback sync-loop lives inside Canvas so it can use useFrame */}
         <PlaybackSyncLoop />
