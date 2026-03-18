@@ -164,13 +164,18 @@ ddtSchemes
 gradSchemes
 {
     default         Gauss linear;
-    grad(U)         Gauss linear;
+    grad(U)         cellLimited Gauss linear 1;
+    grad(k)         cellLimited Gauss linear 1;
+    grad(omega)     cellLimited Gauss linear 1;
 }
 
 divSchemes
 {
     default         none;
-    div(phi,U)      Gauss upwind;
+    div(phi,U)      bounded Gauss linearUpwind grad(U);
+    div(phi,k)      bounded Gauss upwind;
+    div(phi,omega)  bounded Gauss upwind;
+    div((nuEff*dev2(T(grad(U))))) Gauss linear;
 }
 
 laplacianSchemes
@@ -216,16 +221,34 @@ solvers
         tolerance       1e-8;
         relTol          0.1;
     }
+
+    k
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-8;
+        relTol          0.1;
+    }
+
+    omega
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-8;
+        relTol          0.1;
+    }
 }
 
 SIMPLE
 {
-    nNonOrthogonalCorrectors 0;
+    nNonOrthogonalCorrectors 1;
 
     residualControl
     {
-        p               1e-3;
-        U               1e-4;
+        p               1e-4;
+        U               1e-5;
+        k               1e-4;
+        omega           1e-4;
     }
 }
 
@@ -238,6 +261,8 @@ relaxationFactors
     equations
     {
         U               0.7;
+        k               0.5;
+        omega           0.5;
     }
 }
 """
@@ -255,8 +280,91 @@ TURBULENCE_PROPERTIES_TEMPLATE = """/*--------------------------------*- C++ -*-
 FoamFile { version 2.0; format ascii; class dictionary; location "constant"; object turbulenceProperties; }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-simulationType  laminar;
+simulationType  RAS;
+
+RAS
+{
+    RASModel        kOmegaSST;
+    turbulence      on;
+    printCoeffs     on;
+}
 """
+
+K_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class volScalarField; object k; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform {{ k }};
+
+boundaryField {
+    inlet {
+        type            fixedValue;
+        value           uniform {{ k }};
+    }
+    outlet {
+        type            zeroGradient;
+    }
+    foil {
+        type            kqRWallFunction;
+        value           uniform {{ k }};
+    }
+    walls {
+        type            kqRWallFunction;
+        value           uniform {{ k }};
+    }
+}"""
+
+OMEGA_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class volScalarField; object omega; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 0 -1 0 0 0 0];
+internalField   uniform {{ omega }};
+
+boundaryField {
+    inlet {
+        type            fixedValue;
+        value           uniform {{ omega }};
+    }
+    outlet {
+        type            zeroGradient;
+    }
+    foil {
+        type            omegaWallFunction;
+        value           uniform {{ omega }};
+    }
+    walls {
+        type            omegaWallFunction;
+        value           uniform {{ omega }};
+    }
+}"""
+
+NUT_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class volScalarField; object nut; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 2 -1 0 0 0 0];
+internalField   uniform {{ nut }};
+
+boundaryField {
+    inlet {
+        type            calculated;
+        value           uniform {{ nut }};
+    }
+    outlet {
+        type            calculated;
+        value           uniform 0;
+    }
+    foil {
+        type            nutkWallFunction;
+        value           uniform 0;
+    }
+    walls {
+        type            nutkWallFunction;
+        value           uniform 0;
+    }
+}"""
 
 SHM_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
 FoamFile { version 2.0; format ascii; class dictionary; object snappyHexMeshDict; }
@@ -354,7 +462,7 @@ class TemplateManager:
         velocity,
         water_density,
         location_in_mesh=(0.5, 0.5, 0.5),
-        max_iterations=500,
+        max_iterations=1000,
         write_interval=50,
         domain=None,
         mesh_cells=None,
@@ -370,6 +478,22 @@ class TemplateManager:
         
         # 2. Write the Pressure (p) dict (Required to prevent solver crash)
         self.write_file("0/p", P_TEMPLATE, {})
+
+        # 3. Turbulence BCs (k-omega SST)
+        # Compute inlet turbulence quantities from freestream velocity.
+        # TI = 5% turbulence intensity (typical for external water flows)
+        # L_turb = 0.07 * L_ref; use a conservative reference length of 0.1m
+        import math
+        ti = 0.05
+        l_ref = 0.1
+        u_mag = max(abs(float(velocity)), 0.01)
+        k_val = 1.5 * (ti * u_mag) ** 2
+        omega_val = math.sqrt(k_val) / (0.09 ** 0.25 * 0.07 * l_ref)
+        nut_val = k_val / max(omega_val, 1e-10)
+
+        self.write_file("0/k", K_TEMPLATE, {"k": f"{k_val:.6g}"})
+        self.write_file("0/omega", OMEGA_TEMPLATE, {"omega": f"{omega_val:.6g}"})
+        self.write_file("0/nut", NUT_TEMPLATE, {"nut": f"{nut_val:.6g}"})
         
         # 3. Write the controlDict (The simulation brain)
         self.write_file(

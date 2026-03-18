@@ -1,15 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { BufferGeometry, DoubleSide, Group, Material, Mesh, Texture } from 'three';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  BufferGeometry,
+  DoubleSide,
+  Group,
+  Material,
+  Mesh,
+  Texture,
+} from "three";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 type CachedFrame =
   | {
-      kind: 'stl';
+      kind: "stl";
       geometry: BufferGeometry;
     }
   | {
-      kind: 'gltf';
+      kind: "gltf";
       scene: Group;
     };
 
@@ -17,11 +24,13 @@ function disposeMaterial(mat: Material) {
   const anyMat = mat as unknown as Record<string, unknown>;
   for (const key of Object.keys(anyMat)) {
     const val = anyMat[key];
-    if (val && typeof val === 'object') {
+    if (val && typeof val === "object") {
       const maybeTexture = val as Texture;
-      if (typeof maybeTexture.dispose === 'function') {
+      if (typeof maybeTexture.dispose === "function") {
         // Heuristic: only dispose Texture-like objects.
-        if ('isTexture' in (maybeTexture as unknown as Record<string, unknown>)) {
+        if (
+          "isTexture" in (maybeTexture as unknown as Record<string, unknown>)
+        ) {
           maybeTexture.dispose();
         }
       }
@@ -40,7 +49,8 @@ function disposeGLTFScene(scene: Group) {
         // ignore
       }
     }
-    const material = (mesh as unknown as { material?: Material | Material[] }).material;
+    const material = (mesh as unknown as { material?: Material | Material[] })
+      .material;
     if (material) {
       const mats = Array.isArray(material) ? material : [material];
       for (const mat of mats) {
@@ -56,7 +66,7 @@ function disposeGLTFScene(scene: Group) {
 
 function loadFrame(url: string): Promise<CachedFrame> {
   const lower = url.toLowerCase();
-  if (lower.endsWith('.stl')) {
+  if (lower.endsWith(".stl")) {
     return new Promise((resolve, reject) => {
       const loader = new STLLoader();
       loader.load(
@@ -72,23 +82,27 @@ function loadFrame(url: string): Promise<CachedFrame> {
           // Debug: Log bounding box and sphere
           if (geometry.boundingBox && geometry.boundingSphere) {
             // eslint-disable-next-line no-console
-            console.log('SimulationFrame: main mesh geometry loaded', url, {
+            console.log("SimulationFrame: main mesh geometry loaded", url, {
               boundingBox: geometry.boundingBox,
               boundingBoxMin: geometry.boundingBox.min,
               boundingBoxMax: geometry.boundingBox.max,
               boundingSphere: geometry.boundingSphere,
               boundingSphereCenter: geometry.boundingSphere.center,
               boundingSphereRadius: geometry.boundingSphere.radius,
-              vertexCount: geometry.getAttribute('position')?.count,
+              vertexCount: geometry.getAttribute("position")?.count,
             });
           } else {
             // eslint-disable-next-line no-console
-            console.log('SimulationFrame: main mesh geometry loaded (no bounds)', url, geometry);
+            console.log(
+              "SimulationFrame: main mesh geometry loaded (no bounds)",
+              url,
+              geometry,
+            );
           }
-          resolve({ kind: 'stl', geometry });
+          resolve({ kind: "stl", geometry });
         },
         undefined,
-        (err) => reject(err)
+        (err) => reject(err),
       );
     });
   }
@@ -98,10 +112,10 @@ function loadFrame(url: string): Promise<CachedFrame> {
     loader.load(
       url,
       (gltf) => {
-        resolve({ kind: 'gltf', scene: gltf.scene });
+        resolve({ kind: "gltf", scene: gltf.scene });
       },
       undefined,
-      (err) => reject(err)
+      (err) => reject(err),
     );
   });
 }
@@ -119,10 +133,15 @@ export function SimulationFrame({
   showPressureMap,
   onActiveLoaded,
 }: SimulationFrameProps) {
-  const cacheRef = useRef(new Map<string, { lastUsed: number; frame: CachedFrame }>());
+  const cacheRef = useRef(
+    new Map<string, { lastUsed: number; frame: CachedFrame }>(),
+  );
   const [activeFrame, setActiveFrame] = useState<CachedFrame | null>(null);
 
-  const keepSet = useMemo(() => new Set(neighborUrls.filter(Boolean)), [neighborUrls]);
+  const keepSet = useMemo(
+    () => new Set(neighborUrls.filter(Boolean)),
+    [neighborUrls],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -155,9 +174,7 @@ export function SimulationFrame({
 
         // Preload neighbors.
         await Promise.all(
-          neighborUrls
-            .filter((u) => !!u)
-            .map((u) => ensure(u))
+          neighborUrls.filter((u) => !!u).map((u) => ensure(u)),
         );
         if (cancelled) return;
 
@@ -165,7 +182,7 @@ export function SimulationFrame({
         for (const [url, entry] of cacheRef.current.entries()) {
           if (!keepSet.has(url)) {
             try {
-              if (entry.frame.kind === 'stl') {
+              if (entry.frame.kind === "stl") {
                 entry.frame.geometry.dispose();
               } else {
                 disposeGLTFScene(entry.frame.scene);
@@ -178,7 +195,7 @@ export function SimulationFrame({
         }
       } catch {
         // eslint-disable-next-line no-console
-        console.error('SimulationFrame: failed to load frame', activeUrl);
+        console.error("SimulationFrame: failed to load frame", activeUrl);
         if (!cancelled) setActiveFrame(null);
       }
     }
@@ -189,21 +206,22 @@ export function SimulationFrame({
     };
   }, [activeUrl, neighborUrls, keepSet, onActiveLoaded]);
 
-  // Hide main mesh for overlay visibility
-  if (!activeUrl || !activeFrame) {
-    // eslint-disable-next-line no-console
-    console.log('SimulationFrame: main mesh hidden for overlay visibility');
-    return null;
+  if (!activeUrl || !activeFrame) return null;
+
+  if (activeFrame.kind === "gltf") {
+    return <primitive object={activeFrame.scene} />;
   }
 
-  if (activeFrame.kind === 'gltf') {
-    // eslint-disable-next-line no-console
-    console.log('SimulationFrame: main mesh hidden (gltf) for overlay visibility');
-    return null;
-  }
-
-  // Hide STL mesh
-  // eslint-disable-next-line no-console
-  console.log('SimulationFrame: main mesh hidden (stl) for overlay visibility');
-  return null;
+  return (
+    <mesh geometry={activeFrame.geometry}>
+      <meshStandardMaterial
+        color="#94a3b8"
+        metalness={0.4}
+        roughness={0.35}
+        side={DoubleSide}
+        transparent
+        opacity={0.9}
+      />
+    </mesh>
+  );
 }

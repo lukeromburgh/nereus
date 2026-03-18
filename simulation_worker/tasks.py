@@ -633,13 +633,13 @@ def post_process_results_sequence(case_dir, sim_id, *, frame_count=10, slice_axi
                 return None
 
             try:
-                contours = sampled.contour(isosurfaces=12, scalars=scalars_name)
+                contours = sampled.contour(isosurfaces=20, scalars=scalars_name)
                 if contours is None or int(getattr(contours, "n_cells", 0)) <= 0:
                     return None
                 # Make contours visibly thick in the viewport. The previous value often produced
                 # sub-pixel tubes after camera-fit, making the overlay appear "missing".
-                r = _tube_radius_from_bounds(sampled.bounds, 0.01)
-                tubed = contours.tube(radius=r, n_sides=10)
+                r = _tube_radius_from_bounds(sampled.bounds, 0.015)
+                tubed = contours.tube(radius=r, n_sides=12)
                 return tubed.triangulate()
             except Exception:
                 return None
@@ -688,13 +688,29 @@ def post_process_results_sequence(case_dir, sim_id, *, frame_count=10, slice_axi
                 seed_x = x0 + 0.02 * dx
                 # Keep this intentionally small: tubed streamlines can explode into multi-million
                 # triangle STLs which are impractical to ship to the browser.
-                ny, nz = 4, 4
+                ny, nz = 6, 6
                 ys = [y0 + (i + 1) * dy / (ny + 1) for i in range(ny)]
                 zs = [z0 + (j + 1) * dz / (nz + 1) for j in range(nz)]
                 pts = []
                 for yy in ys:
                     for zz in zs:
                         pts.append([seed_x, yy, zz])
+
+                # Add foil-proximate seed points for near-body flow visualization
+                if foil_surface is not None and hasattr(foil_surface, 'bounds'):
+                    try:
+                        fb = foil_surface.bounds
+                        fx0 = float(fb[0]) - 0.05 * dx
+                        fy0, fy1 = float(fb[2]), float(fb[3])
+                        fz0, fz1 = float(fb[4]), float(fb[5])
+                        for fi in range(3):
+                            for fj in range(3):
+                                fy = fy0 + (fi + 1) * (fy1 - fy0) / 4
+                                fz = fz0 + (fj + 1) * (fz1 - fz0) / 4
+                                pts.append([fx0, fy, fz])
+                    except Exception:
+                        pass
+
                 source = pv.PolyData(pts)
 
                 diag = (dx * dx + dy * dy + dz * dz) ** 0.5
@@ -707,7 +723,7 @@ def post_process_results_sequence(case_dir, sim_id, *, frame_count=10, slice_axi
                     initial_step_length=step,
                     min_step_length=max(step * 0.1, 1e-6),
                     max_step_length=max(step * 2.0, 1e-5),
-                    max_steps=900,
+                    max_steps=1200,
                     terminal_speed=1e-6,
                     compute_vorticity=False,
                 )
