@@ -268,3 +268,126 @@ All endpoints are provided by Django REST Framework's `DefaultRouter`:
 | **Convergence Chart**      | Post-run line chart of max residual per solver step                                            |
 | **Log Stream**             | Live-scrolling raw solver output console                                                       |
 | **Mesh Download**          | Direct download link to the exported result mesh file                                          |
+
+---
+
+Summary of simulation
+
+Overview
+Nereus is a hydrofoil CFD simulation platform built on OpenFOAM 11 (incompressible steady-state RANS), orchestrated through a Django REST API → Celery → Docker worker pipeline, with PyVista-based post-processing for browser playback.
+
+1. User-Facing Controls (Frontend → API)
+   The user controls these parameters via ConfigPanel.tsx, stored in a Zustand store (useSimStore.ts):
+
+Parameter Range What it does
+Velocity 1–50 m/s Freestream water speed. Sets the U inlet boundary condition.
+Angle of Attack -15° to +15° Decomposed into Ux = V × cos(AoA) and Uz = -V × sin(AoA). Applied to the velocity field (not mesh rotation).
+Mesh Density 0.5× to 2.0× Multiplier on the base cell count. Higher = more cells across the foil. Capped at 200k base cells (snappyHexMesh handles local refinement).
+Submersion Depth 0–5 m Translates the foil geometry downward in z to simulate depth below water surface.
+Slice Axis x / y / z Which plane the post-processing extracts cross-section frames from.
+Vehicle mass, payload, CoG (x,y,z) Free Center of gravity feeds into the CofR parameter in the OpenFOAM forces function object.
+Not directly exposed but hardcoded:
+
+Water density: 1025 kg/m³ (seawater)
+Kinematic viscosity: 1×10⁻⁶ m²/s (water at ~20°C)
+Turbulence intensity: 5% (hardcoded in template_manager.py:509)
+Reference length for turbulence: 0.1 m (hardcoded)
+Max solver iterations: 1000 (hardcoded in write_interval=5)
+Solver: simpleFoam (steady-state SIMPLE algorithm)
+Turbulence model: k-ω SST (always) 2. Simulation Pipeline (5 Phases)
+All orchestrated in tasks.py:973:
+
+Phase 1 — Pre-flight & Domain Derivation
+Fetch parameters from Django API via GET /api/runs/{id}/
+Ensure STL exists — converts GLTF/GLB/OBJ → STL via trimesh (tasks.py:74)
+surfaceCheck — validates the STL is watertight (rejects open edges)
+Auto-scaling — if the STL characteristic length > 10m, assumes millimeters and scales by 0.001
+Submersion translation — shifts foil center to -submersion_depth in z
+Dynamic domain sizing — computes a bounding box around the foil:
+Upstream padding: 5× characteristic length
+Downstream: 10× characteristic length
+Lateral: 5× characteristic length
+Cell count heuristic — cell_size = char_len / (20 × mesh_density), clamped with a hard cap of 200k base cells
+locationInMesh — placed 10% from the inlet face, centered in y/z (must be outside the foil, inside the domain)
+Phase 2 — Meshing
+blockMesh — creates the base hexahedral grid (single hex block, uniform grading)
+snappyHexMesh -overwrite — castellated mesh + snap to the foil STL surface
+Refinement levels: (3, 4) on the foil surface (hardcoded)
+addLayers: false (boundary layers disabled for stability)
+Mesh quality controls: relaxed defaults for MVP
+Phase 3 — Solving
+simpleFoam — steady-state incompressible RANS with SIMPLE pressure-velocity coupling
+k-ω SST turbulence model
+Solver numerics: GAMG for pressure, smoothSolver for U/k/omega
+Relaxation: p=0.3, U=0.7, k=0.5, omega=0.5
+Residual targets: p=1e-4, U=1e-5, k=1e-4, omega=1e-4
+Divergence guardrail: a streaming log reader monitors stdout for "NaN" or "Fatal Error" → immediate SIGTERM + failure status
+Real-time log streaming: patches current_logs to Django every 1 second
+Phase 4 — Post-processing
+Using PyVista (tasks.py:472):
+
+Opens the case via pv.OpenFOAMReader
+Selects the last 10 time steps (steady-state convergence tail)
+For each frame:
+Extracts the foil boundary surface (or falls back to a volume slice)
+Generates pressure contour lines (30 iso-contours on the foil surface, tubed for visibility)
+Generates streamlines (6×6 seed grid at the inlet + 3×3 seeds near the foil)
+Parses forces.dat for per-frame Fx, Fy, Fz, and L/D ratio
+Exports everything as STL files to /data/media/simulations/{id}/
+Parses residuals from log.simpleFoam
+Writes results_sequence.json manifest
+Phase 5 — Status Update
+Patches Django with COMPLETED status + all result URLs (frame_mapping, metrics_series, convergence_series).
+
+3. Template System
+   template_manager.py:445 uses Jinja2 to render 10 OpenFOAM dictionaries:
+
+File Purpose Key dynamic values
+0/U Velocity BCs ux, uz (from AoA decomposition)
+0/p Pressure BCs Static (outlet fixed 0)
+0/k Turbulent kinetic energy k = 1.5 × (TI × V)²
+0/omega Specific dissipation rate Derived from k, TI, L_ref
+0/nut Turbulent viscosity k / omega
+system/controlDict Solver control + forces max_iterations, write_interval, water_density, CofR
+system/fvSchemes Discretization schemes Static (linearUpwind for U, upwind for k/omega)
+system/fvSolution Solver settings Static (GAMG, smoothSolver, relaxation factors)
+system/blockMeshDict Base mesh geometry x/y/z_min/max, nx/ny/nz
+system/snappyHexMeshDict Refinement around foil locationInMesh
+constant/transportProperties Fluid properties nu (kinematic viscosity)
+constant/turbulenceProperties Turbulence config Static (k-ω SST) 4. What's Realistic vs. What's Simplified
+Currently realistic:
+
+k-ω SST is an industry-standard turbulence model for external hydrodynamics
+SIMPLE is appropriate for steady-state incompressible flows
+Surface forces (pressure + viscous) are correctly computed and decomposed
+AoA decomposition into velocity components is physically correct
+Watertight STL validation prevents garbage-in/garbage-out
+Simplified / MVP shortcuts that limit realism:
+
+Limitation Impact What to do
+No boundary layers (addLayers: false) Wall shear stress, drag, and separation prediction are inaccurate. y+ values are likely too large. Enable snappyHexMesh layer addition with appropriate y+ targeting (~1 for SST)
+Fixed refinement levels (3,4) May under-resolve thin trailing edges or over-resolve blunt bodies Make refinement levels scale with mesh_density or add featureEdge refinement
+No free surface (single-phase) Ignores wave drag, spray, ventilation, and surface piercing effects Switch to interFoam (VOF multiphase) for realistic hydrofoil-at-surface behavior
+Steady-state only Cannot capture vortex shedding, flutter, transient startup, or unsteady separation Add transient solver option (pimpleFoam) for dynamic cases
+Hardcoded turbulence (5% TI, 0.1m L_ref) Inlet turbulence may not match real operating conditions Expose TI and L_ref as user parameters, or compute from upstream geometry
+No gravity / buoyancy Submersion depth translates geometry but doesn't create hydrostatic pressure gradient Add gravity term + correct reference pressure for submerged operation
+Uniform grading (simpleGrading 1 1 1) Wastes cells in far-field, too coarse near boundaries Use graded mesh with expansion ratios toward walls/foil
+No feature edge refinement Leading/trailing edges poorly resolved Add surfaceFeatureExtractDict + featureEdge refinement in snappyHexMesh
+No moment coefficients Only forces are extracted, not pitch/roll/yaw moments Parse moment.dat from the forces function object (already written by OpenFOAM)
+Flat velocity profile Inlet boundary layer not modeled Add inlet profile or use a mapped BC for developed flow
+No cavitation At high speeds, hydrofoils cavitate — not captured Requires interPhaseChangeFoam or similar
+Post-processing: STL slices only Loses field data (pressure/velocity magnitude) for rich visualization Export VTK/VTP with scalar fields for WebGL-based field rendering
+No mesh independence study No automated convergence check across mesh densities Could run 2-3 mesh levels automatically and compare forces 5. Architecture for Extension
+To make the simulation more realistic, the key extension points are:
+
+template_manager.py — Add new templates or modify existing ones (e.g., interFoam controlDict, g file for gravity, alpha.water for VOF, layer addition in snappyHexMeshDict)
+
+tasks.py run_hydro_simulation() — Add new solver phases (e.g., surfaceFeatureExtract before meshing, interFoam instead of simpleFoam, decomposePar/mpirun for parallel)
+
+models.py SimulationRun — Add new fields for additional user parameters (turbulence intensity, solver type, enable_free_surface, etc.)
+
+ConfigPanel.tsx — Add UI controls for any new parameters
+
+tasks.py:472 — Extend to export richer data (VTK fields, moment coefficients, wall y+ visualization, free surface contours)
+
+The pipeline is cleanly separated: UI → API model → Celery task → template rendering → OpenFOAM execution → PyVista post-processing → JSON manifest → frontend playback. Each layer can be extended independently.
