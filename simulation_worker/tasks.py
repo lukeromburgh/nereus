@@ -3,14 +3,28 @@ import subprocess
 import requests
 import glob
 import re
+import json
 import logging
+import math
 import os
+import sys
 from collections import deque
 import threading
 import time
 import pyvista as pv
 import shutil
 from template_manager import TemplateManager, SHM_TEMPLATE
+
+# Django ORM bootstrap — add backend to path and configure settings.
+# The actual model import is deferred to inside task functions so that
+# django.setup() has fully completed before any ORM access.
+_BACKEND_DIR = os.environ.get('DJANGO_BACKEND_DIR', '/backend')
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'nereus_core.settings')
+
+import django
+django.setup()
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +131,248 @@ def _ensure_foil_stl(case_dir):
         return stl_path
     except Exception as e:
         raise RuntimeError(f"Failed converting {src_path} -> STL: {e}")
+
+def normalise_stl_orientation(stl_path, run):
+    """Align an STL so that chord→+X, span→+Y, thickness→+Z.
+
+    Uses the oriented bounding box (OBB) to detect the principal axes of the
+    geometry, then permutes them so the longest extent (chord) maps to X, the
+    second-longest (span) maps to Y, and the shortest (thickness) maps to Z.
+
+    User-supplied pitch/roll/yaw (degrees) from *run* are composed on top of
+    the OBB alignment.  The mesh is then centred at the origin.
+
+    On success the corrected STL is written back to *stl_path* and diagnostic
+    axis-mapping information is stored on the Django ``SimulationRun`` instance.
+    """
+    import numpy as np
+    import trimesh
+    import trimesh.transformations as tf
+
+    pitch_deg = float(getattr(run, 'pitch', 0) or 0)
+    roll_deg = float(getattr(run, 'roll', 0) or 0)
+    yaw_deg = float(getattr(run, 'yaw', 0) or 0)
+
+    mesh = trimesh.load(stl_path, force='mesh')
+
+    axis_labels = ['X', 'Y', 'Z']
+    obb_applied = False
+
+    try:
+        obb = mesh.bounding_box_oriented
+        # The OBB transform encodes the rotation that takes the OBB-local frame
+        # to the world frame.  The upper-left 3×3 gives the three principal axes
+        # as columns.
+        obb_rotation = np.array(obb.primitive.transform[:3, :3])
+        extents = np.array(obb.primitive.extents)  # lengths along each OBB axis
+
+        # Sort extents descending: longest → chord(X), mid → span(Y), shortest → thickness(Z)
+        sorted_indices = np.argsort(-extents)  # descending
+
+        detected_chord_axis = axis_labels[sorted_indices[0]]
+        detected_span_axis = axis_labels[sorted_indices[1]]
+        detected_up_axis = axis_labels[sorted_indices[2]]
+
+        # Build the permuted rotation: reorder columns so that the OBB axis that
+        # is longest maps to world-X, second to world-Y, third to world-Z.
+        # We want R_align such that R_align @ obb_axis_i = world_target_i.
+        # The OBB rotation's columns are the OBB axes in world coords.
+        # R_desired = I (target frame) composed from the permuted OBB columns.
+        permuted = obb_rotation[:, sorted_indices]
+
+        # Ensure right-handedness: if the determinant is negative, flip the Z column.
+        if np.linalg.det(permuted) < 0:
+            permuted[:, 2] = -permuted[:, 2]
+
+        # The alignment rotation goes from world → OBB-aligned, so we need the
+        # inverse (transpose) of the permuted matrix.
+        align_rotation = permuted.T
+
+        # Build a 4×4 transform
+        align_4x4 = np.eye(4)
+        align_4x4[:3, :3] = align_rotation
+
+        mesh.apply_transform(align_4x4)
+        obb_applied = True
+
+        logger.info(
+            "OBB orientation normalisation applied — "
+            f"chord axis was {detected_chord_axis}, "
+            f"span axis was {detected_span_axis}, "
+            f"up axis was {detected_up_axis}"
+        )
+    except Exception as e:
+        logger.warning(f"OBB computation failed (degenerate geometry?): {e} — skipping OBB alignment")
+        detected_chord_axis = 'X'
+        detected_span_axis = 'Y'
+        detected_up_axis = 'Z'
+
+    # Apply user-supplied pitch/roll/yaw on top of the (possibly OBB-aligned) mesh
+    if abs(roll_deg) > 1e-9 or abs(pitch_deg) > 1e-9 or abs(yaw_deg) > 1e-9:
+        euler_mat = tf.euler_matrix(
+            math.radians(roll_deg),
+            math.radians(pitch_deg),
+            math.radians(yaw_deg),
+            axes='sxyz',
+        )
+        mesh.apply_transform(euler_mat)
+        logger.info(f"Applied user orientation: pitch={pitch_deg}° roll={roll_deg}° yaw={yaw_deg}°")
+
+    # Centre the mesh at the origin
+    mesh.apply_translation(-mesh.centroid)
+
+    # Export corrected STL back to the same path
+    mesh.export(stl_path)
+
+    # Store diagnostic info on the Django run instance
+    axes_info = {
+        'detected_chord_axis': detected_chord_axis,
+        'detected_span_axis': detected_span_axis,
+        'detected_up_axis': detected_up_axis,
+        'obb_applied': obb_applied,
+    }
+    try:
+        run.geometry_axes_detected = axes_info
+        run.save(update_fields=['geometry_axes_detected'])
+    except Exception as e:
+        logger.warning(f"Could not persist geometry_axes_detected on run: {e}")
+
+    logger.info(f"STL orientation normalisation complete: {axes_info}")
+
+
+@app.task(name='tasks.preview_stl_orientation', bind=True)
+def preview_stl_orientation(self, run_id):
+    """Lightweight read-only orientation preview.
+
+    Performs the same OBB detection and pitch/roll/yaw rotation as
+    ``normalise_stl_orientation`` but *never* overwrites the original STL.
+    Exports a convex-hull GLB (<50 KB) and bounding-box dimensions so the
+    frontend can show the user what the final orientation will look like.
+    """
+    import numpy as np
+    import trimesh
+    import trimesh.transformations as tf
+    from api.models import SimulationRun
+
+    try:
+        run = SimulationRun.objects.get(pk=run_id)
+    except SimulationRun.DoesNotExist:
+        logger.error(f"preview_stl_orientation: run {run_id} not found")
+        return
+
+    # Locate the STL — mirrors the same logic as the full simulation pre-flight.
+    case_dir = f"/data/simulations/{run_id}"
+    tri_dir = os.path.join(case_dir, "constant", "triSurface")
+    stl_path = os.path.join(tri_dir, "foil.stl")
+
+    if not os.path.exists(stl_path):
+        # Try to resolve via _ensure_foil_stl (converts glb/obj → stl)
+        try:
+            stl_path = _ensure_foil_stl(case_dir)
+        except Exception as e:
+            logger.warning(f"preview_stl_orientation: could not locate STL: {e}")
+            return
+
+    try:
+        mesh = trimesh.load(stl_path, force='mesh')
+    except Exception as e:
+        logger.warning(f"preview_stl_orientation: failed to load STL: {e}")
+        return
+
+    axis_labels = ['X', 'Y', 'Z']
+    detected_chord_axis = 'X'
+    detected_span_axis = 'Y'
+    detected_up_axis = 'Z'
+
+    # ── OBB detection (read-only — same logic as normalise_stl_orientation) ──
+    try:
+        obb = mesh.bounding_box_oriented
+        obb_rotation = np.array(obb.primitive.transform[:3, :3])
+        extents = np.array(obb.primitive.extents)
+        sorted_indices = np.argsort(-extents)
+
+        detected_chord_axis = axis_labels[sorted_indices[0]]
+        detected_span_axis = axis_labels[sorted_indices[1]]
+        detected_up_axis = axis_labels[sorted_indices[2]]
+
+        permuted = obb_rotation[:, sorted_indices]
+        if np.linalg.det(permuted) < 0:
+            permuted[:, 2] = -permuted[:, 2]
+
+        align_4x4 = np.eye(4)
+        align_4x4[:3, :3] = permuted.T
+        mesh.apply_transform(align_4x4)
+    except Exception as e:
+        logger.warning(f"preview_stl_orientation: OBB failed: {e}")
+
+    # ── User pitch/roll/yaw ──
+    pitch_deg = float(run.pitch or 0)
+    roll_deg = float(run.roll or 0)
+    yaw_deg = float(run.yaw or 0)
+
+    if abs(roll_deg) > 1e-9 or abs(pitch_deg) > 1e-9 or abs(yaw_deg) > 1e-9:
+        euler_mat = tf.euler_matrix(
+            math.radians(roll_deg),
+            math.radians(pitch_deg),
+            math.radians(yaw_deg),
+            axes='sxyz',
+        )
+        mesh.apply_transform(euler_mat)
+
+    # Centre at origin
+    mesh.apply_translation(-mesh.centroid)
+
+    # ── Bounding-box dimensions (axis-aligned after correction) ──
+    bb_min = mesh.bounds[0]
+    bb_max = mesh.bounds[1]
+    chord_m = float(bb_max[0] - bb_min[0])
+    span_m = float(bb_max[1] - bb_min[1])
+    thickness_m = float(bb_max[2] - bb_min[2])
+
+    # ── Convex-hull GLB preview ──
+    media_root = os.environ.get("DJANGO_MEDIA_ROOT", "/data/media")
+    out_dir = os.path.join(media_root, "simulations", str(run_id))
+    os.makedirs(out_dir, exist_ok=True)
+
+    preview_path = os.path.join(out_dir, "orientation_preview.glb")
+    hull = mesh.convex_hull
+    hull.export(preview_path, file_type='glb')
+
+    preview_url = f"/media/simulations/{run_id}/orientation_preview.glb"
+
+    # ── Persist to Django ──
+    axes_info = {
+        'detected_chord_axis': detected_chord_axis,
+        'detected_span_axis': detected_span_axis,
+        'detected_up_axis': detected_up_axis,
+    }
+    dims_info = {
+        'chord_m': round(chord_m, 6),
+        'span_m': round(span_m, 6),
+        'thickness_m': round(thickness_m, 6),
+    }
+
+    SimulationRun.objects.filter(pk=run_id).update(
+        orientation_preview_url=preview_url,
+        geometry_dimensions=dims_info,
+        geometry_axes_detected=axes_info,
+    )
+
+    logger.info(
+        f"preview_stl_orientation complete for run {run_id}: "
+        f"dims={dims_info}, axes={axes_info}, preview={preview_url}"
+    )
+
+    return {
+        'preview_glb_url': preview_url,
+        'chord_m': dims_info['chord_m'],
+        'span_m': dims_info['span_m'],
+        'thickness_m': dims_info['thickness_m'],
+        'detected_chord_axis': detected_chord_axis,
+        'detected_span_axis': detected_span_axis,
+        'detected_up_axis': detected_up_axis,
+    }
+
 
 def _format_stream_tails(stdout_tail, stderr_tail):
     parts = []
@@ -597,535 +853,874 @@ def _parse_yplus(case_dir):
     return None, None
 
 
-def post_process_results_sequence(case_dir, sim_id, *, frame_count=10, slice_axis='y'):
-    """Export a temporal sequence of axis-aligned slices for playback.
+def compute_skin_friction_lines(foil_surface_mesh, case_dir, run):
+    """Generate surface streamlines (skin friction lines) on the foil boundary.
 
-    Returns dict with keys:
-      - result_sequence_path (media URL)
-      - frame_mapping (list)
-      - metrics_series (list)
-      - convergence_series (list)
-      - preview_mesh_path (media URL) (first frame)
+    Parameters
+    ----------
+    foil_surface_mesh : pv.PolyData
+        Foil boundary surface already extracted from OpenFOAM.
+    case_dir : str | Path
+        Path to the OpenFOAM case directory (used only for logging context).
+    run : dict
+        Must contain keys: 'sim_id', 'out_dir' (Path), 'velocity', 'rho'.
+
+    Returns
+    -------
+    str or None
+        Relative media path of the exported skin_friction_lines.vtp, or None on failure.
     """
-    logger.info(f"Starting PyVista Temporal Post-Processing for {sim_id}")
-    
-    # Generate the dummy .foam file which PyVista/VTK needs to read the OpenFOAM directory
-    foam_file = os.path.join(case_dir, "case.foam")
-    with open(foam_file, 'w') as f:
-        pass
-        
+    import numpy as np
+    from pathlib import Path
+
+    sim_id = run["sim_id"]
+    out_dir = Path(run["out_dir"])
+    V = float(run["velocity"])
+    rho = float(run["rho"])
+    q_inf = 0.5 * rho * V * V
+
     try:
-        # 1. Load the OpenFOAM data
-        reader = pv.OpenFOAMReader(foam_file)
+        mesh = foil_surface_mesh.copy()
 
-        # Best-effort: enable field arrays if the reader supports it.
-        # (Some OpenFOAM/VTK builds require explicitly enabling arrays.)
-        for method_name in (
-            "enable_all_cell_arrays",
-            "enable_all_point_arrays",
-            "enable_all_arrays",
-        ):
-            try:
-                method = getattr(reader, method_name, None)
-                if callable(method):
-                    method()
-            except Exception:
-                pass
-
-        # Guard: Ensure we actually have time values (i.e. solver didn't fail at 0)
-        time_values = list(getattr(reader, "time_values", []) or [])
-        if len(time_values) == 0:
-            raise ValueError("No time steps found to process.")
-
-        # Keep the last `frame_count` time values for a "steady-state" playback loop.
-        selected_times = time_values[-frame_count:]
-
-        # Output directory under Django MEDIA_ROOT
-        media_root = os.environ.get("DJANGO_MEDIA_ROOT", "/data/media")
-        out_dir = os.path.join(media_root, "simulations", str(sim_id))
-        os.makedirs(out_dir, exist_ok=True)
-
-        forces_by_time = _parse_forces(case_dir)
-        convergence_series = _parse_simplefoam_residuals(case_dir)
-
-        frame_mapping = []
-        metrics_series = []
-
-        normal = slice_axis.lower().strip()
-        if normal not in {"x", "y", "z"}:
-            normal = "y"
-
-        def _extract_foil_surface(dataset):
-            # Preferred: boundary/foil surface patch (exact shape used for forces).
-            if not isinstance(dataset, pv.MultiBlock):
+        # --- 1. Obtain wall shear stress vector ---
+        point_arrays = list(getattr(mesh, "point_data", {}).keys())
+        if "wallShearStress" in point_arrays:
+            tau = np.asarray(mesh.point_data["wallShearStress"], dtype=np.float64)
+        else:
+            # Approximate: tau_w ≈ rho * nut_wall * (U / y)  (visualisation quality)
+            logger.info("wallShearStress not found on mesh; approximating from U and nut")
+            U_field = None
+            nut_field = None
+            for name in ("U", "UMean"):
+                if name in point_arrays:
+                    U_field = np.asarray(mesh.point_data[name], dtype=np.float64)
+                    break
+            for name in ("nut",):
+                if name in point_arrays:
+                    nut_field = np.asarray(mesh.point_data[name], dtype=np.float64)
+                    break
+            if U_field is None:
+                logger.warning("Cannot compute skin friction lines: no velocity field on foil surface")
                 return None
+            U_mag = np.linalg.norm(U_field, axis=1, keepdims=True)
+            U_mag = np.where(U_mag < 1e-30, 1e-30, U_mag)
+            U_dir = U_field / U_mag
+            if nut_field is not None:
+                # Use nut as a proxy for the wall-normal gradient magnitude
+                nut_col = nut_field.reshape(-1, 1) if nut_field.ndim == 1 else nut_field
+                tau = rho * nut_col * U_dir  # direction from U, magnitude scaled by nut
+            else:
+                # Last resort: use velocity direction with unit magnitude
+                tau = U_dir
 
-            try:
-                boundary = dataset.get("boundary") if hasattr(dataset, "get") else None
-            except Exception:
-                boundary = None
+        # --- 2. Project shear stress onto surface tangent plane ---
+        mesh = mesh.compute_normals(point_normals=True, cell_normals=False,
+                                    auto_orient_normals=True)
+        normals = np.asarray(mesh.point_data["Normals"], dtype=np.float64)
+        # tau_tangent = tau - (tau . n) * n
+        dot = np.sum(tau * normals, axis=1, keepdims=True)
+        tau_tangent = tau - dot * normals
+        tau_tangent_mag = np.linalg.norm(tau_tangent, axis=1)
+        # Avoid zero vectors for streamline integration
+        zero_mask = tau_tangent_mag < 1e-30
+        tau_tangent_mag[zero_mask] = 1e-30
 
-            if isinstance(boundary, pv.MultiBlock):
-                try:
-                    foil = boundary.get("foil") if hasattr(boundary, "get") else None
-                except Exception:
-                    foil = None
-                if foil is not None:
-                    return foil
+        mesh.point_data["tau_tangent"] = tau_tangent
+        mesh.set_active_vectors("tau_tangent")
 
-            # Fallback search: any block name containing 'foil'
-            def walk(mb):
-                if not isinstance(mb, pv.MultiBlock):
-                    return None
-                try:
-                    keys = list(mb.keys())
-                except Exception:
-                    keys = []
-                for i in range(len(mb)):
-                    name = keys[i] if keys and i < len(keys) else None
-                    block = mb[i]
-                    if isinstance(name, str) and "foil" in name.lower() and block is not None:
-                        return block
-                    found = walk(block)
-                    if found is not None:
-                        return found
-                return None
+        # --- 3. Seed points & surface streamlines ---
+        bounds = mesh.bounds  # (xmin, xmax, ymin, ymax, zmin, zmax)
+        n_side = int(np.ceil(300 ** 0.5))  # ~17x18 grid
+        xs = np.linspace(bounds[0], bounds[1], n_side)
+        ys = np.linspace(bounds[2], bounds[3], n_side)
+        xx, yy = np.meshgrid(xs, ys)
+        zz = np.full_like(xx, 0.5 * (bounds[4] + bounds[5]))
+        seed_points = np.column_stack([xx.ravel(), yy.ravel(), zz.ravel()])
 
-            return walk(dataset)
+        # Project each seed point to the closest point on the foil surface
+        closest_ids = np.array([mesh.find_closest_point(pt) for pt in seed_points])
+        # Deduplicate
+        unique_ids = np.unique(closest_ids)
+        seed_cloud = pv.PolyData(mesh.points[unique_ids])
 
-        def _extract_internal_mesh(dataset):
-            if not isinstance(dataset, pv.MultiBlock):
-                return None
-            try:
-                internal = dataset.get("internalMesh") if hasattr(dataset, "get") else None
-            except Exception:
-                internal = None
-            if internal is not None:
-                return internal
+        streamlines = mesh.streamlines_from_source(
+            seed_cloud,
+            vectors="tau_tangent",
+            max_steps=2000,
+            integration_direction="both",
+        )
 
-            # Fallback: search for a block named internalMesh.
-            try:
-                keys = list(dataset.keys())
-            except Exception:
-                keys = []
-            for i in range(len(dataset)):
-                name = keys[i] if keys and i < len(keys) else None
-                block = dataset[i]
-                if isinstance(name, str) and name == "internalMesh" and block is not None:
-                    return block
+        if streamlines is None or streamlines.n_points == 0:
+            logger.warning("Skin friction streamlines produced no geometry")
             return None
 
-        def _safe_save(mesh_obj, path):
-            try:
-                if mesh_obj is None:
-                    return False
-                if hasattr(mesh_obj, "n_cells") and int(mesh_obj.n_cells) <= 0:
-                    return False
-                mesh_obj.save(path)
-                return True
-            except Exception:
-                return False
+        # --- 4. Colour by Cf = |tau| / (0.5 * rho * V^2) ---
+        if "tau_tangent" in streamlines.array_names:
+            sl_tau = np.asarray(streamlines["tau_tangent"], dtype=np.float64)
+            sl_mag = np.linalg.norm(sl_tau, axis=1)
+        else:
+            sl_mag = np.zeros(streamlines.n_points)
+        Cf = sl_mag / q_inf if q_inf > 0 else sl_mag
+        streamlines.point_data["Cf"] = Cf
 
-        def _tube_radius_from_bounds(bounds, frac):
-            try:
-                dx = float(bounds[1]) - float(bounds[0])
-                dy = float(bounds[3]) - float(bounds[2])
-                dz = float(bounds[5]) - float(bounds[4])
-                diag = (dx * dx + dy * dy + dz * dz) ** 0.5
-                if diag <= 0:
-                    return 0.001
-                return max(diag * frac, 1e-6)
-            except Exception:
-                return 0.001
+        # --- 5. Export ---
+        vtp_path = out_dir / "skin_friction_lines.vtp"
+        streamlines.save(str(vtp_path))
+        logger.info(f"Exported skin_friction_lines.vtp ({streamlines.n_points} points)")
+        return f"/media/simulations/{sim_id}/skin_friction_lines.vtp"
 
-        def _generate_pressure_lines(foil_surface, volume):
-            """Return a tubed PolyData of pressure contour lines, or None."""
-            if foil_surface is None or volume is None:
-                return None
-
-            sampled = foil_surface
-            try:
-                # Probe p (and any other fields) from the volume onto the foil surface.
-                sampled = foil_surface.sample(volume)
-            except Exception:
-                pass
-
-            scalars_name = None
-            try:
-                if hasattr(sampled, "array_names") and "p" in sampled.array_names:
-                    scalars_name = "p"
-            except Exception:
-                scalars_name = None
-
-            if not scalars_name:
-                return None
-
-            try:
-                rng = sampled.get_data_range(scalars_name)
-                if rng is None:
-                    return None
-                lo, hi = float(rng[0]), float(rng[1])
-                if not (hi > lo):
-                    return None
-            except Exception:
-                return None
-
-            try:
-                contours = sampled.contour(isosurfaces=30, scalars=scalars_name)
-                if contours is None or int(getattr(contours, "n_cells", 0)) <= 0:
-                    return None
-                # Make contours visible but not overwhelming.
-                r = _tube_radius_from_bounds(sampled.bounds, 0.004)
-                tubed = contours.tube(radius=r, n_sides=12)
-                return tubed.triangulate()
-            except Exception:
-                return None
-
-        def _generate_flow_lines(foil_surface, volume):
-            """Return a tubed PolyData of streamlines, or None."""
-            if foil_surface is None or volume is None:
-                return None
-
-            # Need a velocity field. Prefer point-data vectors; fall back to cell-data vectors and
-            # convert to point data for streamline integration.
-            vector_name = None
-            try:
-                pkeys = list(getattr(volume, "point_data", {}).keys())
-                ckeys = list(getattr(volume, "cell_data", {}).keys())
-
-                if "U" in pkeys:
-                    vector_name = "U"
-                elif "U" in ckeys:
-                    try:
-                        volume = volume.cell_data_to_point_data()
-                        vector_name = "U" if "U" in list(getattr(volume, "point_data", {}).keys()) else None
-                    except Exception:
-                        vector_name = None
-                else:
-                    # Last resort: pick any 3-component vector array that looks like velocity.
-                    candidates = [k for k in pkeys if isinstance(k, str) and k.lower().startswith("u")]
-                    vector_name = candidates[0] if candidates else None
-            except Exception:
-                vector_name = None
-
-            if not vector_name:
-                return None
-
-            try:
-                b = volume.bounds
-                x0, x1 = float(b[0]), float(b[1])
-                y0, y1 = float(b[2]), float(b[3])
-                z0, z1 = float(b[4]), float(b[5])
-                dx, dy, dz = x1 - x0, y1 - y0, z1 - z0
-                if dx <= 0 or dy <= 0 or dz <= 0:
-                    return None
-
-                # Seed a small grid of points slightly inside the inlet side.
-                # (Seeding outside bounds often yields 0 streamlines depending on VTK version.)
-                seed_x = x0 + 0.02 * dx
-                # Keep this intentionally small: tubed streamlines can explode into multi-million
-                # triangle STLs which are impractical to ship to the browser.
-                ny, nz = 6, 6
-                ys = [y0 + (i + 1) * dy / (ny + 1) for i in range(ny)]
-                zs = [z0 + (j + 1) * dz / (nz + 1) for j in range(nz)]
-                pts = []
-                for yy in ys:
-                    for zz in zs:
-                        pts.append([seed_x, yy, zz])
-
-                # Add foil-proximate seed points for near-body flow visualization
-                if foil_surface is not None and hasattr(foil_surface, 'bounds'):
-                    try:
-                        fb = foil_surface.bounds
-                        fx0 = float(fb[0]) - 0.05 * dx
-                        fy0, fy1 = float(fb[2]), float(fb[3])
-                        fz0, fz1 = float(fb[4]), float(fb[5])
-                        for fi in range(3):
-                            for fj in range(3):
-                                fy = fy0 + (fi + 1) * (fy1 - fy0) / 4
-                                fz = fz0 + (fj + 1) * (fz1 - fz0) / 4
-                                pts.append([fx0, fy, fz])
-                    except Exception:
-                        pass
-
-                source = pv.PolyData(pts)
-
-                diag = (dx * dx + dy * dy + dz * dz) ** 0.5
-                step = max(diag * 0.02, 1e-4)
-                streams = volume.streamlines_from_source(
-                    source,
-                    vectors=vector_name,
-                    integrator_type=45,
-                    integration_direction="forward",
-                    initial_step_length=step,
-                    min_step_length=max(step * 0.1, 1e-6),
-                    max_step_length=max(step * 2.0, 1e-5),
-                    max_steps=400,
-                    terminal_speed=1e-6,
-                    compute_vorticity=False,
-                )
-                if streams is None or int(getattr(streams, "n_cells", 0)) <= 0:
-                    return None
-
-                # Clip streamlines to a padded box around the foil so they don't span
-                # the full CFD domain (which is typically 10–20× larger than the foil).
-                if foil_surface is not None:
-                    try:
-                        fb = foil_surface.bounds
-                        pad_x = (fb[1] - fb[0]) * 4
-                        pad_y = (fb[3] - fb[2]) * 6
-                        pad_z = (fb[5] - fb[4]) * 6
-                        clip_b = [
-                            fb[0] - pad_x, fb[1] + pad_x * 2,
-                            fb[2] - pad_y, fb[3] + pad_y,
-                            fb[4] - pad_z, fb[5] + pad_z,
-                        ]
-                        clipped = streams.clip_box(clip_b, invert=False)
-                        if clipped is not None and int(getattr(clipped, "n_cells", 0)) > 0:
-                            # clip_box may return UnstructuredGrid; convert back to
-                            # PolyData so .tube() is available.
-                            if not isinstance(clipped, pv.PolyData):
-                                clipped = clipped.extract_surface()
-                            streams = clipped
-                    except Exception:
-                        pass
-
-                # Make streamlines visibly thick in the viewport; keep tri-count controlled by
-                # streamline count/steps + decimation (see below).
-                # Use a small fraction of the FOIL bounds (not domain bounds) so tubes
-                # stay thin relative to the hydrofoil geometry.
-                tube_bounds_src = foil_surface.bounds if foil_surface is not None else volume.bounds
-                r = _tube_radius_from_bounds(tube_bounds_src, 0.006)
-                tubed = streams.tube(radius=r, n_sides=6).triangulate()
-
-                # Best-effort decimation to keep STL payloads browser-friendly.
-                try:
-                    n_cells = int(getattr(tubed, "n_cells", 0))
-                except Exception:
-                    n_cells = 0
-
-                if n_cells > 250_000:
-                    for fn_name in ("decimate_pro", "decimate"):
-                        fn = getattr(tubed, fn_name, None)
-                        if fn is None:
-                            continue
-                        try:
-                            tubed = fn(0.85)
-                            break
-                        except TypeError:
-                            try:
-                                tubed = fn(target_reduction=0.85)
-                                break
-                            except Exception:
-                                pass
-                        except Exception:
-                            pass
-
-                return tubed
-            except Exception:
-                return None
-
-        for frame_index, t in enumerate(selected_times):
-            reader.set_active_time_value(t)
-            mesh = reader.read()
-
-            volume = None
-            if isinstance(mesh, pv.MultiBlock):
-                volume = _extract_internal_mesh(mesh)
-
-            exported = None
-            if isinstance(mesh, pv.MultiBlock):
-                exported = _extract_foil_surface(mesh)
-
-            if exported is None:
-                # Last-resort fallback: slice the combined volume.
-                if isinstance(mesh, pv.MultiBlock):
-                    try:
-                        mesh = mesh.combine()
-                    except Exception as e:
-                        raise RuntimeError(f"Failed to combine OpenFOAM MultiBlock: {e}")
-                exported = mesh.slice(normal=normal, generate_triangles=True)
-
-            exported = exported.triangulate()
-
-            # Attempt to set pressure scalars (for future GLB export / vertex colors).
-            if hasattr(exported, "array_names") and 'p' in exported.array_names:
-                exported.active_scalars_name = 'p'
-
-            stl_filename = f"frame_{frame_index:03d}.stl"
-            stl_path = os.path.join(out_dir, stl_filename)
-            exported.save(stl_path)
-
-            mesh_url = f"/media/simulations/{sim_id}/{stl_filename}"
-
-            # Overlay layers: pressure contour lines + flow lines.
-            pressure_lines_url = None
-            flow_lines_url = None
-
-            try:
-                pressure_lines = _generate_pressure_lines(exported, volume)
-                if pressure_lines is not None:
-                    pressure_name = f"pressure_lines_{frame_index:03d}.stl"
-                    pressure_path = os.path.join(out_dir, pressure_name)
-                    if _safe_save(pressure_lines, pressure_path):
-                        pressure_lines_url = f"/media/simulations/{sim_id}/{pressure_name}"
-            except Exception:
-                pass
-
-            try:
-                flow_lines = _generate_flow_lines(exported, volume)
-                if flow_lines is not None:
-                    flow_name = f"flow_lines_{frame_index:03d}.stl"
-                    flow_path = os.path.join(out_dir, flow_name)
-                    if _safe_save(flow_lines, flow_path):
-                        flow_lines_url = f"/media/simulations/{sim_id}/{flow_name}"
-            except Exception:
-                pass
-
-            # Metrics (best effort)
-            fx = fy = fz = None
-            try:
-                # forces.dat keys are floats; time_values might also be floats.
-                # Use a tolerance-based lookup since float rounding can differ between
-                # the OpenFOAM time values and the parsed forces time keys.
-                t_key = float(t)
-                if t_key in forces_by_time:
-                    match = t_key
-                else:
-                    # Find closest time key if within a small epsilon.
-                    closest = min(
-                        forces_by_time.keys(),
-                        key=lambda k: abs(k - t_key),
-                        default=None,
-                    )
-                    if closest is not None and abs(closest - t_key) < 1e-6:
-                        match = closest
-                    else:
-                        match = None
-
-                if match is not None:
-                    fx = forces_by_time[match].get("Fx")
-                    fy = forces_by_time[match].get("Fy")
-                    fz = forces_by_time[match].get("Fz")
-            except Exception:
-                pass
-
-            ld_ratio = None
-            try:
-                if fx is not None and fz is not None and abs(float(fx)) > 1e-12:
-                    ld_ratio = float(fz) / float(fx)
-            except Exception:
-                ld_ratio = None
-
-            metrics = {"Fx": fx, "Fy": fy, "Fz": fz, "ld_ratio": ld_ratio}
-
-            frame_mapping.append(
-                {
-                    "frame_index": frame_index,
-                    "time_value": float(t) if isinstance(t, (float, int)) else str(t),
-                    "iteration_number": None,
-                    "mesh_path": mesh_url,
-                    "pressure_lines_path": pressure_lines_url,
-                    "flow_lines_path": flow_lines_url,
-                    "metrics": metrics,
-                }
-            )
-            metrics_series.append(
-                {
-                    "frame_index": frame_index,
-                    "time_value": float(t) if isinstance(t, (float, int)) else None,
-                    **metrics,
-                }
-            )
-
-        results_manifest = {
-            "sim_id": sim_id,
-            "slice_axis": normal,
-            "total_frames": len(frame_mapping),
-            "frame_mapping": frame_mapping,
-            "metrics_series": metrics_series,
-            "convergence_series": convergence_series,
-        }
-
-        manifest_filename = "results_sequence.json"
-        manifest_path = os.path.join(out_dir, manifest_filename)
-        try:
-            import json
-
-            with open(manifest_path, "w", encoding="utf-8") as f:
-                json.dump(results_manifest, f)
-        except Exception as e:
-            logger.warning(f"Failed writing results_sequence.json: {e}")
-
-        manifest_url = f"/media/simulations/{sim_id}/{manifest_filename}"
-        preview_mesh_path = frame_mapping[0]["mesh_path"] if frame_mapping else None
-
-        return {
-            "result_sequence_path": manifest_url,
-            "frame_mapping": frame_mapping,
-            "metrics_series": metrics_series,
-            "convergence_series": convergence_series,
-            "preview_mesh_path": preview_mesh_path,
-        }
-            
     except Exception as e:
-        logger.error(f"Post-processing failed: {e}")
+        logger.warning(f"compute_skin_friction_lines failed: {e}")
+        return None
 
-        # MVP Fallback if real simulation files don't exist yet for testing the pipeline
+
+def analyse_tip_vortex(volume_mesh, foil_surface_mesh, foil_bbox, run):
+    """Analyse tip vortex decay, cavitation risk, and vortex trajectory.
+
+    Parameters
+    ----------
+    volume_mesh : pv.DataSet
+        Internal volume mesh with 'vorticity_mag', 'vorticity_x', 'Q_criterion'.
+    foil_surface_mesh : pv.PolyData
+        Foil boundary surface with 'p' and 'Cp' point arrays.
+    foil_bbox : dict
+        Bounding box with keys x_min, x_max, y_min, y_max, z_min, z_max.
+    run : dict
+        Must contain: 'out_dir' (Path), 'sim_id', 'velocity', 'rho', 'p_ref',
+        and optionally 'p_vapour'.
+
+    Returns
+    -------
+    dict
+        Flat dict of scalar results; empty dict on failure.
+    """
+    import json
+    import numpy as np
+    from pathlib import Path
+
+    try:
+        out_dir = Path(run["out_dir"])
+        sim_id = run["sim_id"]
+        V = float(run["velocity"])
+        rho = float(run["rho"])
+        p_ref = float(run["p_ref"])
+        p_vapour = float(run.get("p_vapour") or 2337.0)
+
+        chord = foil_bbox["x_max"] - foil_bbox["x_min"]
+        te_x = foil_bbox["x_max"]
+
+        # ── 1. TIP VORTEX SAMPLING ─────────────────────────────────────────
+        multipliers = [0.5, 1.0, 2.0, 4.0]
+        tip_vortex_samples = []
+
+        for mult in multipliers:
+            try:
+                x_offset = chord * mult
+                x_plane_pos = te_x + x_offset
+                plane = volume_mesh.slice(
+                    normal=[1, 0, 0],
+                    origin=[x_plane_pos, 0, 0],
+                )
+                if plane is None or plane.n_points == 0:
+                    logger.warning(f"Tip vortex: empty slice at {mult}c downstream")
+                    continue
+
+                plane_arrays = list(getattr(plane, "point_data", {}).keys())
+                if "vorticity_mag" not in plane_arrays:
+                    logger.warning("Tip vortex: vorticity_mag missing on slice")
+                    continue
+
+                vort_mag = np.asarray(plane.point_data["vorticity_mag"], dtype=np.float64)
+                peak_idx = int(np.argmax(vort_mag))
+                peak_pt = plane.points[peak_idx]
+                peak_y, peak_z = float(peak_pt[1]), float(peak_pt[2])
+                peak_vort = float(vort_mag[peak_idx])
+
+                # Find minimum pressure within sphere of radius 0.1*chord
+                search_radius = 0.1 * chord
+                pts = np.asarray(plane.points, dtype=np.float64)
+                dists = np.sqrt(
+                    (pts[:, 1] - peak_y) ** 2 + (pts[:, 2] - peak_z) ** 2
+                )
+                mask = dists <= search_radius
+
+                p_min_val = None
+                if "p" in plane_arrays and np.any(mask):
+                    p_arr = np.asarray(plane.point_data["p"], dtype=np.float64)
+                    p_min_val = float(np.min(p_arr[mask]))
+
+                tip_vortex_samples.append({
+                    "x_over_c": float(mult),
+                    "y": peak_y,
+                    "z": peak_z,
+                    "vorticity_mag": peak_vort,
+                    "p_min": p_min_val,
+                })
+            except Exception as e:
+                logger.warning(f"Tip vortex sample at {mult}c failed: {e}")
+
+        # ── 2. CAVITATION RISK ──────────────────────────────────────────────
+        sigma = None
+        cavitation_risk = False
+        cavitation_onset_x_over_c = None
+        cavitating_surface_fraction = 0.0
+
+        denom = 0.5 * rho * V * V
+        if denom > 0:
+            sigma = (p_ref - p_vapour) / denom
+
+        # Check each sample plane for p_min < p_vapour
+        for sample in tip_vortex_samples:
+            if sample["p_min"] is not None and sample["p_min"] < p_vapour:
+                cavitation_risk = True
+                cavitation_onset_x_over_c = sample["x_over_c"]
+                break
+
+        # Cavitating surface fraction (area-weighted)
         try:
-            media_root = os.environ.get("DJANGO_MEDIA_ROOT", "/data/media")
-            out_dir = os.path.join(media_root, "simulations", str(sim_id))
-            os.makedirs(out_dir, exist_ok=True)
-            frame_mapping = []
-            metrics_series = []
-            for frame_index in range(10):
-                dummy = pv.Sphere(radius=0.5 + 0.02 * frame_index).triangulate()
-                fname = f"frame_{frame_index:03d}.stl"
-                fpath = os.path.join(out_dir, fname)
-                dummy.save(fpath)
-                url = f"/media/simulations/{sim_id}/{fname}"
-                entry = {
-                    "frame_index": frame_index,
-                    "time_value": float(frame_index),
-                    "iteration_number": None,
-                    "mesh_path": url,
-                    "metrics": {"Fx": None, "Fy": None, "Fz": None, "ld_ratio": None},
-                }
-                frame_mapping.append(entry)
-                metrics_series.append({"frame_index": frame_index, "time_value": float(frame_index), "Fx": None, "Fy": None, "Fz": None, "ld_ratio": None})
+            foil_with_sizes = foil_surface_mesh.compute_cell_sizes(
+                length=False, area=True, volume=False
+            )
+            foil_p_arrays = list(getattr(foil_surface_mesh, "point_data", {}).keys())
+            if "p" in foil_p_arrays:
+                # Convert point data to cell data for area-weighted fraction
+                cell_mesh = foil_surface_mesh.point_data_to_cell_data()
+                p_cells = np.asarray(cell_mesh["p"], dtype=np.float64)
+                areas = np.asarray(foil_with_sizes.cell_data["Area"], dtype=np.float64)
+                total_area = np.sum(areas)
+                if total_area > 0:
+                    cavitating_mask = p_cells < p_vapour
+                    cavitating_surface_fraction = float(
+                        np.sum(areas[cavitating_mask]) / total_area
+                    )
+        except Exception as e:
+            logger.warning(f"Tip vortex cavitating surface fraction failed: {e}")
 
-            results_manifest = {
-                "sim_id": sim_id,
-                "slice_axis": "y",
-                "total_frames": len(frame_mapping),
-                "frame_mapping": frame_mapping,
-                "metrics_series": metrics_series,
-                "convergence_series": [],
-            }
+        # ── 3. VORTEX DECAY FIT ────────────────────────────────────────────
+        omega_0 = None
+        vortex_decay_rate = None
+        x_over_c_10pct_decay = None
 
-            import json
+        if len(tip_vortex_samples) >= 3:
+            try:
+                from scipy.optimize import curve_fit
 
-            manifest_filename = "results_sequence.json"
-            manifest_path = os.path.join(out_dir, manifest_filename)
-            with open(manifest_path, "w", encoding="utf-8") as f:
-                json.dump(results_manifest, f)
+                x_vals = np.array([s["x_over_c"] for s in tip_vortex_samples])
+                omega_vals = np.array([s["vorticity_mag"] for s in tip_vortex_samples])
 
-            return {
-                "result_sequence_path": f"/media/simulations/{sim_id}/{manifest_filename}",
-                "frame_mapping": frame_mapping,
-                "metrics_series": metrics_series,
-                "convergence_series": [],
-                "preview_mesh_path": frame_mapping[0]["mesh_path"],
-            }
-        except Exception as e2:
-            logger.error(f"Post-processing fallback failed: {e2}")
-            return {
-                "result_sequence_path": None,
-                "frame_mapping": [],
-                "metrics_series": [],
-                "convergence_series": [],
-                "preview_mesh_path": None,
-            }
+                def _decay_model(x, omega0, k):
+                    return omega0 * np.exp(-k * x)
+
+                popt, _ = curve_fit(
+                    _decay_model, x_vals, omega_vals,
+                    p0=[omega_vals[0], 0.5],
+                    maxfev=5000,
+                )
+                omega_0 = float(popt[0])
+                vortex_decay_rate = float(popt[1])
+                if vortex_decay_rate > 0:
+                    x_over_c_10pct_decay = float(np.log(10.0) / vortex_decay_rate)
+                else:
+                    x_over_c_10pct_decay = None
+            except Exception as e:
+                logger.warning(f"Vortex decay curve_fit failed: {e}")
+                omega_0 = None
+                vortex_decay_rate = None
+                x_over_c_10pct_decay = None
+        else:
+            logger.warning(
+                f"Only {len(tip_vortex_samples)} tip vortex samples — "
+                "skipping decay fit (need >= 3)"
+            )
+
+        # ── 4. OUTPUT ──────────────────────────────────────────────────────
+        output = {
+            "tip_vortex_samples": tip_vortex_samples,
+            "cavitation_risk": cavitation_risk,
+            "cavitation_onset_x_over_c": cavitation_onset_x_over_c,
+            "cavitating_surface_fraction": cavitating_surface_fraction,
+            "sigma": sigma,
+            "omega_0": omega_0,
+            "vortex_decay_rate": vortex_decay_rate,
+            "x_over_c_10pct_decay": x_over_c_10pct_decay,
+        }
+
+        json_path = out_dir / "tip_vortex_analysis.json"
+        with open(json_path, "w", encoding="utf-8") as jf:
+            json.dump(output, jf, indent=2)
+        logger.info(f"Exported tip_vortex_analysis.json")
+
+        # Return flat scalar dict (exclude the list; keep only scalars)
+        scalar_results = {
+            "cavitation_risk": cavitation_risk,
+            "cavitation_onset_x_over_c": cavitation_onset_x_over_c,
+            "cavitating_surface_fraction": cavitating_surface_fraction,
+            "sigma": sigma,
+            "omega_0": omega_0,
+            "vortex_decay_rate": vortex_decay_rate,
+            "x_over_c_10pct_decay": x_over_c_10pct_decay,
+        }
+        return scalar_results
+
+    except Exception as e:
+        logger.warning(f"analyse_tip_vortex failed: {e}")
+        return {}
+
+
+def post_process(case_dir, sim_id, *, velocity, rho=1025.0, p_vapour=None):
+    """Full PyVista-based post-processing pipeline for a completed OpenFOAM case.
+
+    Parameters
+    ----------
+    case_dir : str
+        Absolute path to the OpenFOAM case directory.
+    sim_id : int | str
+        Simulation run identifier.
+    velocity : float
+        Freestream (inlet) velocity magnitude [m/s].
+    rho : float
+        Fluid density [kg/m³] (default 1025 for seawater).
+    p_vapour : float | None
+        Vapour pressure [Pa] for cavitation analysis. Defaults to 2337.0.
+
+    Returns
+    -------
+    dict
+        ``results`` – scalar metrics (forces, moments, coefficients, y+ stats)
+        ``file_manifest`` – mapping of output names to relative media paths.
+    """
+    import json
+    import numpy as np
+    from pathlib import Path
+
+    logger.info(f"Starting full PyVista post-processing for sim {sim_id}")
+
+    case_path = Path(case_dir)
+    media_root = Path(os.environ.get("DJANGO_MEDIA_ROOT", "/data/media"))
+    out_dir = media_root / "simulations" / str(sim_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    results: dict = {}
+    file_manifest: dict = {}
+
+    V = float(velocity)
+    q_inf = 0.5 * rho * V * V  # dynamic pressure
+
+    # ── helper: extract named block from MultiBlock ─────────────────────────
+    def _find_block(dataset, name):
+        if not isinstance(dataset, pv.MultiBlock):
+            return None
+        try:
+            blk = dataset.get(name)
+            if blk is not None:
+                return blk
+        except Exception:
+            pass
+        # Recursive walk
+        def walk(mb):
+            if not isinstance(mb, pv.MultiBlock):
+                return None
+            try:
+                keys = list(mb.keys())
+            except Exception:
+                keys = []
+            for i in range(len(mb)):
+                nm = keys[i] if i < len(keys) else None
+                block = mb[i]
+                if isinstance(nm, str) and nm == name and block is not None:
+                    return block
+                found = walk(block)
+                if found is not None:
+                    return found
+            return None
+        return walk(dataset)
+
+    def _find_block_containing(dataset, substring):
+        if not isinstance(dataset, pv.MultiBlock):
+            return None
+        def walk(mb):
+            if not isinstance(mb, pv.MultiBlock):
+                return None
+            try:
+                keys = list(mb.keys())
+            except Exception:
+                keys = []
+            for i in range(len(mb)):
+                nm = keys[i] if i < len(keys) else None
+                block = mb[i]
+                if isinstance(nm, str) and substring.lower() in nm.lower() and block is not None:
+                    return block
+                found = walk(block)
+                if found is not None:
+                    return found
+            return None
+        return walk(dataset)
+
+    def _ensure_point_data(mesh_obj):
+        """Convert cell data to point data if point arrays are missing."""
+        pkeys = list(getattr(mesh_obj, "point_data", {}).keys())
+        ckeys = list(getattr(mesh_obj, "cell_data", {}).keys())
+        if not pkeys and ckeys:
+            return mesh_obj.cell_data_to_point_data()
+        return mesh_obj
+
+    # ── 1. OPEN CASE ────────────────────────────────────────────────────────
+    foam_file = case_path / "case.foam"
+    foam_file.touch()
+
+    reader = pv.OpenFOAMReader(str(foam_file))
+    for method_name in ("enable_all_cell_arrays", "enable_all_point_arrays", "enable_all_arrays"):
+        try:
+            fn = getattr(reader, method_name, None)
+            if callable(fn):
+                fn()
+        except Exception:
+            pass
+
+    time_values = list(getattr(reader, "time_values", []) or [])
+    if not time_values:
+        raise ValueError("No time steps found in OpenFOAM case.")
+
+    # Determine whether time-averaged fields exist (pimpleFoam fieldAverage output)
+    reader.set_active_time_value(time_values[-1])
+    mesh_full = reader.read()
+
+    internal_mesh = _find_block(mesh_full, "internalMesh")
+    if internal_mesh is None:
+        internal_mesh = _find_block_containing(mesh_full, "internal")
+
+    use_mean_fields = False
+    if internal_mesh is not None:
+        all_arrays = list(getattr(internal_mesh, "point_data", {}).keys()) + \
+                     list(getattr(internal_mesh, "cell_data", {}).keys())
+        if "UMean" in all_arrays and "pMean" in all_arrays:
+            use_mean_fields = True
+            logger.info("Detected fieldAverage output — using UMean/pMean")
+
+    # Alias field names for downstream use
+    U_name = "UMean" if use_mean_fields else "U"
+    p_name = "pMean" if use_mean_fields else "p"
+
+    # Ensure internal mesh has point data
+    if internal_mesh is not None:
+        internal_mesh = _ensure_point_data(internal_mesh)
+
+    # Extract foil boundary surface
+    boundary_block = _find_block(mesh_full, "boundary")
+    foil_surface = None
+    if boundary_block is not None:
+        foil_surface = _find_block(boundary_block, "foil")
+        if foil_surface is None:
+            foil_surface = _find_block_containing(boundary_block, "foil")
+    if foil_surface is None:
+        foil_surface = _find_block_containing(mesh_full, "foil")
+
+    if foil_surface is not None:
+        foil_surface = _ensure_point_data(foil_surface)
+
+    # Extract outlet boundary for p_ref
+    outlet_surface = None
+    if boundary_block is not None:
+        outlet_surface = _find_block(boundary_block, "outlet")
+        if outlet_surface is None:
+            outlet_surface = _find_block_containing(boundary_block, "outlet")
+
+    # Foil bounding box geometry
+    foil_bbox = None
+    chord_length = 1.0
+    span_length = 1.0
+    if foil_surface is not None:
+        fb = foil_surface.bounds
+        chord_length = max(float(fb[1]) - float(fb[0]), 1e-9)
+        span_length = max(float(fb[3]) - float(fb[2]), 1e-9)
+        foil_bbox = {
+            "x_min": float(fb[0]), "x_max": float(fb[1]),
+            "y_min": float(fb[2]), "y_max": float(fb[3]),
+            "z_min": float(fb[4]), "z_max": float(fb[5]),
+        }
+    results["chord_length"] = chord_length
+    results["span_length"] = span_length
+
+    # Reference pressure (computed in section 2, used in section 3)
+    p_ref = 0.0
+
+    # ── 2. PRESSURE – Cp on foil, export foil_surface.vtp ──────────────────
+    try:
+        if foil_surface is not None:
+            # Determine p_ref from mean outlet pressure
+            p_ref = 0.0
+            if outlet_surface is not None:
+                outlet_surface = _ensure_point_data(outlet_surface)
+                outlet_arrays = list(getattr(outlet_surface, "point_data", {}).keys())
+                if p_name in outlet_arrays:
+                    p_ref = float(np.nanmean(outlet_surface.point_data[p_name]))
+                elif "p" in outlet_arrays:
+                    p_ref = float(np.nanmean(outlet_surface.point_data["p"]))
+
+            foil_arrays = list(getattr(foil_surface, "point_data", {}).keys())
+            p_field_name = p_name if p_name in foil_arrays else ("p" if "p" in foil_arrays else None)
+
+            if p_field_name is not None and q_inf > 0:
+                p_arr = np.asarray(foil_surface.point_data[p_field_name], dtype=np.float64)
+                # OpenFOAM stores kinematic pressure p/rho; convert to Cp
+                Cp = (p_arr - p_ref) / (q_inf / rho)
+                foil_surface.point_data["Cp"] = Cp
+
+            vtp_path = out_dir / "foil_surface.vtp"
+            foil_surface.save(str(vtp_path))
+            file_manifest["foil_surface"] = f"/media/simulations/{sim_id}/foil_surface.vtp"
+            logger.info("Exported foil_surface.vtp")
+
+            # Also export STL for fast frontend rendering (Three.js STLLoader).
+            stl_path = out_dir / "foil_surface.stl"
+            foil_surface.save(str(stl_path))
+            file_manifest["foil_surface_stl"] = f"/media/simulations/{sim_id}/foil_surface.stl"
+            logger.info("Exported foil_surface.stl")
+    except Exception as e:
+        logger.warning(f"Section 2 (Pressure/Cp) failed: {e}")
+
+    # ── 2b. SKIN FRICTION LINES ────────────────────────────────────────────
+    try:
+        if foil_surface is not None:
+            sf_path = compute_skin_friction_lines(
+                foil_surface,
+                case_dir,
+                run={
+                    "sim_id": sim_id,
+                    "out_dir": out_dir,
+                    "velocity": V,
+                    "rho": rho,
+                },
+            )
+            if sf_path:
+                file_manifest["skin_friction_lines"] = sf_path
+    except Exception as e:
+        logger.warning(f"Section 2b (Skin friction lines) failed: {e}")
+
+    # ── 3. SPANWISE SECTIONS ───────────────────────────────────────────────
+    try:
+        if foil_surface is not None and foil_bbox is not None:
+            span_stations = [10, 25, 50, 75, 90]
+            y_min = foil_bbox["y_min"]
+            y_extent = span_length
+
+            for pct in span_stations:
+                try:
+                    y_loc = y_min + (pct / 100.0) * y_extent
+                    section = foil_surface.slice(normal="y", origin=(0, y_loc, 0))
+                    if section is None or section.n_points == 0:
+                        logger.warning(f"Empty slice at span {pct}%")
+                        continue
+
+                    section = _ensure_point_data(section)
+                    sec_arrays = list(getattr(section, "point_data", {}).keys())
+
+                    # Compute Cp for the section if not already present
+                    p_sec = p_name if p_name in sec_arrays else ("p" if "p" in sec_arrays else None)
+                    if p_sec is not None and "Cp" not in sec_arrays and q_inf > 0:
+                        p_arr = np.asarray(section.point_data[p_sec], dtype=np.float64)
+                        section.point_data["Cp"] = (p_arr - p_ref) / (q_inf / rho)
+
+                    # Store chordwise x-coordinate as explicit array
+                    section.point_data["x_chord"] = np.asarray(
+                        section.points[:, 0], dtype=np.float64
+                    )
+
+                    fname = f"section_span_{pct}.vtp"
+                    section.save(str(out_dir / fname))
+                    file_manifest[f"section_span_{pct}"] = f"/media/simulations/{sim_id}/{fname}"
+                except Exception as e:
+                    logger.warning(f"Spanwise section {pct}% failed: {e}")
+
+            logger.info("Exported spanwise section VTPs")
+    except Exception as e:
+        logger.warning(f"Section 3 (Spanwise Sections) failed: {e}")
+
+    # ── 4. VORTICITY & Q-CRITERION on volume mesh ──────────────────────────
+    vol = None
+    try:
+        if internal_mesh is not None:
+            vol = _ensure_point_data(internal_mesh)
+            vol_arrays = list(getattr(vol, "point_data", {}).keys())
+
+            u_field = U_name if U_name in vol_arrays else ("U" if "U" in vol_arrays else None)
+
+            if u_field is not None:
+                # Vorticity via compute_derivative
+                vol = vol.compute_derivative(scalars=u_field, vorticity=True)
+                if "vorticity" in vol.array_names:
+                    vort = np.asarray(vol["vorticity"], dtype=np.float64)
+                    vol.point_data["vorticity"] = vort
+                    vol.point_data["vorticity_mag"] = np.linalg.norm(vort, axis=1)
+                    vol.point_data["vorticity_x"] = vort[:, 0]
+
+                # Q-criterion from velocity gradient tensor
+                grad = vol.compute_derivative(scalars=u_field, gradient=True)
+                grad_arr_name = f"gradient" if "gradient" in grad.array_names else f"{u_field}_gradient"
+                if grad_arr_name not in grad.array_names:
+                    # Try to find the gradient array
+                    grad_candidates = [n for n in grad.array_names if "gradient" in n.lower()]
+                    grad_arr_name = grad_candidates[0] if grad_candidates else None
+
+                if grad_arr_name is not None:
+                    grad_tensor = np.asarray(grad[grad_arr_name], dtype=np.float64)
+                    # grad_tensor shape: (N, 9) → reshape to (N, 3, 3)
+                    N = grad_tensor.shape[0]
+                    G = grad_tensor.reshape(N, 3, 3)
+                    # Omega (antisymmetric) and S (symmetric)
+                    Omega = 0.5 * (G - np.transpose(G, (0, 2, 1)))
+                    S = 0.5 * (G + np.transpose(G, (0, 2, 1)))
+                    # Frobenius norms squared
+                    Omega_sq = np.sum(Omega * Omega, axis=(1, 2))
+                    S_sq = np.sum(S * S, axis=(1, 2))
+                    Q = 0.5 * (Omega_sq - S_sq)
+                    vol.point_data["Q_criterion"] = Q
+
+                # Cp on volume
+                p_vol = p_name if p_name in vol_arrays else ("p" if "p" in vol_arrays else None)
+                if p_vol is not None and q_inf > 0:
+                    p_arr = np.asarray(vol.point_data[p_vol], dtype=np.float64)
+                    vol.point_data["Cp"] = (p_arr - p_ref) / (q_inf / rho)
+
+                vtu_path = out_dir / "volume_fields.vtu"
+                vol.save(str(vtu_path))
+                file_manifest["volume_fields"] = f"/media/simulations/{sim_id}/volume_fields.vtu"
+                logger.info("Exported volume_fields.vtu")
+            else:
+                logger.warning("No velocity field found on internal mesh — skipping vorticity/Q")
+                vol = None
+    except Exception as e:
+        logger.warning(f"Section 4 (Vorticity & Q-criterion) failed: {e}")
+        vol = None
+
+    # ── 5. Q-CRITERION ISO-SURFACE ─────────────────────────────────────────
+    try:
+        if vol is not None and "Q_criterion" in vol.array_names:
+            Q_threshold = 0.1 * (V / chord_length) ** 2
+            iso = vol.contour(isosurfaces=[Q_threshold], scalars="Q_criterion")
+            if iso is None or iso.n_points == 0:
+                # Halve threshold and retry once
+                Q_threshold *= 0.5
+                iso = vol.contour(isosurfaces=[Q_threshold], scalars="Q_criterion")
+
+            if iso is not None and iso.n_points > 0:
+                if "vorticity_x" in vol.array_names:
+                    iso = iso.sample(vol)
+                iso_path = out_dir / "q_criterion_isosurface.vtp"
+                iso.save(str(iso_path))
+                file_manifest["q_criterion_isosurface"] = (
+                    f"/media/simulations/{sim_id}/q_criterion_isosurface.vtp"
+                )
+                results["Q_threshold"] = Q_threshold
+                logger.info(f"Exported q_criterion_isosurface.vtp (Q={Q_threshold:.4g})")
+            else:
+                logger.warning("Q-criterion iso-surface empty after retry")
+    except Exception as e:
+        logger.warning(f"Section 5 (Q iso-surface) failed: {e}")
+
+    # ── 6. WAKE CROSS-PLANES ──────────────────────────────────────────────
+    try:
+        if vol is not None and foil_bbox is not None:
+            trailing_edge_x = foil_bbox["x_max"]
+            multipliers = [1.0, 1.5, 2.0, 3.0]
+            for mult in multipliers:
+                try:
+                    x_plane = trailing_edge_x + mult * chord_length
+                    wake_slice = vol.slice(normal="x", origin=(x_plane, 0, 0))
+                    if wake_slice is None or wake_slice.n_points == 0:
+                        logger.warning(f"Empty wake plane at {mult}c")
+                        continue
+                    label = f"{mult:.1f}".replace(".", "_")
+                    fname = f"wake_plane_{label}c.vtp"
+                    wake_slice.save(str(out_dir / fname))
+                    file_manifest[f"wake_plane_{mult}c"] = (
+                        f"/media/simulations/{sim_id}/{fname}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Wake plane {mult}c failed: {e}")
+            logger.info("Exported wake cross-plane VTPs")
+    except Exception as e:
+        logger.warning(f"Section 6 (Wake planes) failed: {e}")
+
+    # ── 6b. TIP VORTEX ANALYSIS ───────────────────────────────────────────
+    try:
+        if vol is not None and foil_surface is not None and foil_bbox is not None:
+            tip_vortex_results = analyse_tip_vortex(
+                vol,
+                foil_surface,
+                foil_bbox,
+                run={
+                    "sim_id": sim_id,
+                    "out_dir": out_dir,
+                    "velocity": V,
+                    "rho": rho,
+                    "p_ref": p_ref,
+                    "p_vapour": p_vapour,
+                },
+            )
+            results.update(tip_vortex_results)
+            if tip_vortex_results:
+                json_path = out_dir / "tip_vortex_analysis.json"
+                file_manifest["tip_vortex_analysis"] = str(json_path)
+    except Exception as e:
+        logger.warning(f"Section 6b (Tip vortex analysis) failed: {e}")
+
+    # ── 7. FORCES & MOMENTS ───────────────────────────────────────────────
+    try:
+        forces_path = case_path / "postProcessing" / "forces"
+        if forces_path.is_dir():
+            # Parse forces.dat
+            time_dirs = sorted(
+                (d.name for d in forces_path.iterdir() if d.is_dir()),
+                key=lambda s: float(s) if s.replace(".", "", 1).isdigit() else 0.0,
+                reverse=True,
+            )
+
+            forces_rows = []  # list of (Fx, Fy, Fz)
+            moment_rows = []  # list of (Mx, My, Mz)
+
+            def _parse_vector_line(line):
+                vectors = []
+                buf = ""
+                depth = 0
+                for ch in line:
+                    if ch == "(":
+                        depth += 1
+                        buf = ""
+                    elif ch == ")":
+                        if depth > 0:
+                            depth -= 1
+                            vals = buf.strip().split()
+                            if len(vals) == 3:
+                                try:
+                                    vectors.append([float(v) for v in vals])
+                                except Exception:
+                                    pass
+                    else:
+                        if depth > 0:
+                            buf += ch
+                return vectors
+
+            for td in time_dirs:
+                forces_file = forces_path / td / "forces.dat"
+                if forces_file.exists():
+                    with open(forces_file, "r", encoding="utf-8", errors="ignore") as f:
+                        for raw in f:
+                            line = raw.strip()
+                            if not line or line.startswith("#"):
+                                continue
+                            vecs = _parse_vector_line(line)
+                            if len(vecs) >= 2:
+                                pf, vf = vecs[0], vecs[1]
+                                forces_rows.append((
+                                    pf[0] + vf[0],
+                                    pf[1] + vf[1],
+                                    pf[2] + vf[2],
+                                ))
+                    break  # use first (newest) time dir that has data
+
+            for td in time_dirs:
+                moment_file = forces_path / td / "moment.dat"
+                if moment_file.exists():
+                    with open(moment_file, "r", encoding="utf-8", errors="ignore") as f:
+                        for raw in f:
+                            line = raw.strip()
+                            if not line or line.startswith("#"):
+                                continue
+                            vecs = _parse_vector_line(line)
+                            if len(vecs) >= 2:
+                                pm, vm = vecs[0], vecs[1]
+                                moment_rows.append((
+                                    pm[0] + vm[0],
+                                    pm[1] + vm[1],
+                                    pm[2] + vm[2],
+                                ))
+                    break
+
+            # Average last 20% of forces
+            if forces_rows:
+                tail_n = max(1, len(forces_rows) // 5)
+                tail = forces_rows[-tail_n:]
+                Fx = sum(r[0] for r in tail) / len(tail)
+                Fy = sum(r[1] for r in tail) / len(tail)
+                Fz = sum(r[2] for r in tail) / len(tail)
+                results["Fx_drag"] = Fx
+                results["Fy_side"] = Fy
+                results["Fz_lift"] = Fz
+                results["L_D_ratio"] = Fz / Fx if abs(Fx) > 1e-12 else None
+
+                # CL, CD using planform area from STL bounding box
+                planform_area = chord_length * span_length
+                if planform_area > 0 and q_inf > 0:
+                    results["CL"] = Fz / (q_inf * planform_area)
+                    results["CD"] = Fx / (q_inf * planform_area)
+
+            if moment_rows:
+                tail_n = max(1, len(moment_rows) // 5)
+                tail = moment_rows[-tail_n:]
+                Mx = sum(r[0] for r in tail) / len(tail)
+                My = sum(r[1] for r in tail) / len(tail)
+                Mz = sum(r[2] for r in tail) / len(tail)
+                results["Mx_roll"] = Mx
+                results["My_pitch"] = My
+                results["Mz_yaw"] = Mz
+
+            logger.info(f"Forces & moments parsed: {', '.join(f'{k}={v}' for k, v in results.items() if k.startswith(('F','M','L','C')))}")
+        else:
+            logger.warning("No postProcessing/forces directory found")
+    except Exception as e:
+        logger.warning(f"Section 7 (Forces & Moments) failed: {e}")
+
+    # ── 8. WALL Y+ ────────────────────────────────────────────────────────
+    try:
+        if foil_surface is not None:
+            foil_arrays = list(getattr(foil_surface, "point_data", {}).keys())
+            yplus_field = None
+            for candidate_name in ("yPlus", "yplus", "wallYPlus"):
+                if candidate_name in foil_arrays:
+                    yplus_field = candidate_name
+                    break
+
+            if yplus_field is not None:
+                yp = np.asarray(foil_surface.point_data[yplus_field], dtype=np.float64)
+                yp_valid = yp[np.isfinite(yp)]
+                if len(yp_valid) > 0:
+                    yplus_stats = {
+                        "max": float(np.max(yp_valid)),
+                        "mean": float(np.mean(yp_valid)),
+                        "min": float(np.min(yp_valid)),
+                    }
+                    counts, bin_edges = np.histogram(yp_valid, bins=10)
+                    yplus_stats["histogram"] = {
+                        "counts": counts.tolist(),
+                        "bin_edges": bin_edges.tolist(),
+                    }
+                    results["yplus_max"] = yplus_stats["max"]
+                    results["yplus_mean"] = yplus_stats["mean"]
+
+                    json_path = out_dir / "yplus_stats.json"
+                    with open(json_path, "w", encoding="utf-8") as jf:
+                        json.dump(yplus_stats, jf, indent=2)
+                    file_manifest["yplus_stats"] = (
+                        f"/media/simulations/{sim_id}/yplus_stats.json"
+                    )
+                    logger.info(f"y+ stats: max={yplus_stats['max']:.3f}, mean={yplus_stats['mean']:.3f}")
+            else:
+                # Fallback: parse from solver log (reuses existing helper)
+                yp_max, yp_mean = _parse_yplus(case_dir)
+                if yp_max is not None:
+                    results["yplus_max"] = yp_max
+                if yp_mean is not None:
+                    results["yplus_mean"] = yp_mean
+    except Exception as e:
+        logger.warning(f"Section 8 (Wall y+) failed: {e}")
+
+    # ── convergence series (reuse existing parser) ─────────────────────────
+    results["convergence_series"] = _parse_simplefoam_residuals(case_dir)
+
+    logger.info(f"Post-processing complete for sim {sim_id}. Files: {list(file_manifest.keys())}")
+    return {"results": results, "file_manifest": file_manifest}
+
 
 def compute_first_layer_thickness(velocity, nu, char_len, y_plus_target=1.0):
     """
@@ -1260,6 +1855,22 @@ def run_hydro_simulation(self, sim_id):
                     y_len = max(bounds[3] - bounds[2], 1e-9)
                     z_len = max(bounds[5] - bounds[4], 1e-9)
                     characteristic_len = max(x_len, y_len, z_len)
+
+                # STL orientation normalisation — align chord→+X, span→+Y, thickness→+Z
+                # and apply any user-supplied pitch/roll/yaw correction.
+                try:
+                    from api.models import SimulationRun as _SR
+                    _run_obj = _SR.objects.get(pk=sim_id)
+                    normalise_stl_orientation(stl_path, _run_obj)
+                    # Reload bounds after orientation change
+                    foil_mesh = pv.read(stl_path)
+                    bounds = foil_mesh.bounds
+                    x_len = max(bounds[1] - bounds[0], 1e-9)
+                    y_len = max(bounds[3] - bounds[2], 1e-9)
+                    z_len = max(bounds[5] - bounds[4], 1e-9)
+                    characteristic_len = max(x_len, y_len, z_len)
+                except Exception as e:
+                    logger.warning(f"STL orientation normalisation skipped: {e}")
 
                 # Translate foil downward by submersion_depth so the domain
                 # represents the foil at the correct depth below the water surface.
@@ -1493,44 +2104,54 @@ def run_hydro_simulation(self, sim_id):
             patch_django_status(sim_id, "FAILED", error_log=logs)
             return "Solver Failed"
              
-        # 4. Phase 4: Temporal Geometry Export (Sequence)
-        patch_django_status(sim_id, None, error_log="Exporting temporal slice sequence...")
+        # 4. Phase 4: Full Post-Processing Pipeline
+        patch_django_status(sim_id, None, error_log="Running post-processing pipeline...")
 
-        # Worker currently exports STL slices for browser playback. GLB export can be swapped in later.
-        slice_axis = (run_data.get("slice_axis") or "y")
-        results = post_process_results_sequence(case_dir, sim_id, frame_count=10, slice_axis=slice_axis)
+        pp = post_process(
+            case_dir, sim_id,
+            velocity=velocity,
+            rho=density,
+            p_vapour=run_data.get("p_vapour"),
+        )
+        pp_results = pp.get("results", {})
+        pp_manifest = pp.get("file_manifest", {})
 
-        # Parse moments from postProcessing and include in the final PATCH
-        roll_moment, pitch_moment, yaw_moment = _parse_moments(case_dir)
-        if pitch_moment is not None:
-            logger.info(
-                f"Moments: pitch={pitch_moment:.4f} Nm, roll={roll_moment:.4f} Nm, yaw={yaw_moment:.4f} Nm"
-            )
+        # Write results_manifest.json to simulation output directory
+        media_root = os.environ.get("DJANGO_MEDIA_ROOT", "/data/media")
+        out_dir = os.path.join(media_root, "simulations", str(sim_id))
+        os.makedirs(out_dir, exist_ok=True)
+        manifest_path = os.path.join(out_dir, "results_manifest.json")
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(pp_manifest, f, indent=2)
 
-        # Parse wall y+ from postProcessing/yPlus or solver log
-        wall_yplus_max, wall_yplus_mean = _parse_yplus(case_dir)
-        if wall_yplus_max is not None:
-            logger.info(f"Wall y+: max={wall_yplus_max:.3f}, mean={wall_yplus_mean:.3f}")
+        # Map post_process result keys to model field names
+        KEY_MAP = {
+            "CL": "cl", "CD": "cd", "L_D_ratio": "l_d_ratio",
+            "My_pitch": "cm_pitch", "Mx_roll": "roll_moment", "Mz_yaw": "yaw_moment",
+            "yplus_max": "wall_yplus_max", "yplus_mean": "wall_yplus_mean",
+        }
+        normalized = {}
+        for k, v in pp_results.items():
+            normalized[KEY_MAP.get(k, k)] = v
 
+        # Build scalar_fields keeping only keys that match actual model fields
+        from api.models import SimulationRun
+        model_fields = {f.name for f in SimulationRun._meta.get_fields()}
+        scalar_fields = {k: v for k, v in normalized.items() if k in model_fields}
+        scalar_fields["file_manifest"] = pp_manifest
+
+        SimulationRun.objects.filter(id=sim_id).update(**scalar_fields)
+
+        # Patch status to COMPLETED via HTTP (keeps existing status-patching pattern)
         completed_payload = {
             "status": "COMPLETED",
             "current_logs": "Simulation Success",
-            "result_mesh_path": results.get("preview_mesh_path"),
-            "result_sequence_path": results.get("result_sequence_path"),
-            "frame_mapping": results.get("frame_mapping"),
-            "metrics_series": results.get("metrics_series"),
-            "convergence_series": results.get("convergence_series"),
+            "convergence_series": pp_results.get("convergence_series", []),
         }
-        if pitch_moment is not None:
-            completed_payload["pitch_moment"] = pitch_moment
-        if roll_moment is not None:
-            completed_payload["roll_moment"] = roll_moment
-        if yaw_moment is not None:
-            completed_payload["yaw_moment"] = yaw_moment
-        if wall_yplus_max is not None:
-            completed_payload["wall_yplus_max"] = wall_yplus_max
-        if wall_yplus_mean is not None:
-            completed_payload["wall_yplus_mean"] = wall_yplus_mean
+        if "foil_surface_stl" in pp_manifest:
+            completed_payload["result_mesh_path"] = pp_manifest["foil_surface_stl"]
+        elif "foil_surface" in pp_manifest:
+            completed_payload["result_mesh_path"] = pp_manifest["foil_surface"]
 
         try:
             requests.patch(f"{DJANGO_API_URL}/{sim_id}/", json=completed_payload)

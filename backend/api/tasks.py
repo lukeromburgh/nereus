@@ -8,3 +8,9 @@ def run_hydro_simulation(sim_id):
     # In a full-stack context, Django just needs this signature to queue
     # the task into Redis.
     pass
+
+
+@shared_task(name='tasks.preview_stl_orientation')
+def preview_stl_orientation(run_id):
+    # Stub — actual execution happens in the simulation_worker container.
+    pass

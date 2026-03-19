@@ -28,6 +28,7 @@ import {
   RESIDUAL_COLORS,
 } from "../lib/residuals";
 import { downloadCSV, metricsToCSV, convergenceToCSV } from "../lib/exportCSV";
+import { OrientationWarningBanner } from "./OrientationWarningBanner";
 
 function formatNumber(val: number | null | undefined, digits = 2) {
   if (val === null || val === undefined || Number.isNaN(val)) return "—";
@@ -286,6 +287,9 @@ export function AnalysisPanel() {
           F{currentFrame}
         </span>
       </div>
+
+      {/* Orientation auto-correction warning */}
+      <OrientationWarningBanner />
 
       {/* Telemetry metric cards */}
       <MetricCard

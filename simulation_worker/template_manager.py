@@ -158,6 +158,15 @@ functions
         writeControl    writeTime;
         log             yes;
     }
+
+    wallShearStress
+    {
+        type            wallShearStress;
+        libs            ("libfieldFunctionObjects.so");
+        patches         (foil);
+        writeControl    writeTime;
+        log             yes;
+    }
 }
 """
 

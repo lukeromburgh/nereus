@@ -10,10 +10,15 @@ import {
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { useSimStore } from "../store/useSimStore";
+import { loadVTP } from "../lib/vtpLoader";
 
 type CachedFrame =
   | {
       kind: "stl";
+      geometry: BufferGeometry;
+    }
+  | {
+      kind: "vtp";
       geometry: BufferGeometry;
     }
   | {
@@ -67,6 +72,14 @@ function disposeGLTFScene(scene: Group) {
 
 function loadFrame(url: string): Promise<CachedFrame> {
   const lower = url.toLowerCase();
+
+  if (lower.endsWith(".vtp")) {
+    return loadVTP(url).then((geometry) => ({
+      kind: "vtp" as const,
+      geometry,
+    }));
+  }
+
   if (lower.endsWith(".stl")) {
     return new Promise((resolve, reject) => {
       const loader = new STLLoader();
@@ -174,7 +187,10 @@ export function SimulationFrame({
         setActiveFrame(frame);
 
         // Publish foil bounds so procedural overlays can position themselves
-        if (frame.kind === "stl" && frame.geometry.boundingBox) {
+        if (
+          (frame.kind === "stl" || frame.kind === "vtp") &&
+          frame.geometry.boundingBox
+        ) {
           const bb = frame.geometry.boundingBox;
           const cx = (bb.min.x + bb.max.x) / 2;
           const cy = (bb.min.y + bb.max.y) / 2;
@@ -197,7 +213,7 @@ export function SimulationFrame({
         for (const [url, entry] of cacheRef.current.entries()) {
           if (!keepSet.has(url)) {
             try {
-              if (entry.frame.kind === "stl") {
+              if (entry.frame.kind === "stl" || entry.frame.kind === "vtp") {
                 entry.frame.geometry.dispose();
               } else {
                 disposeGLTFScene(entry.frame.scene);

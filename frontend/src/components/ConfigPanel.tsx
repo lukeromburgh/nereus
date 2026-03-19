@@ -2,6 +2,8 @@ import axios from "axios";
 import { motion } from "framer-motion";
 import { Settings, Zap, ChevronDown } from "lucide-react";
 import { useSimStore } from "../store/useSimStore";
+import { OrientationPanel } from "./OrientationPanel";
+import { OrientationWarningBanner } from "./OrientationWarningBanner";
 
 function SliderControl({
   label,
@@ -65,6 +67,9 @@ export function ConfigPanel() {
     mass,
     payloadWeight,
     centerOfGravity,
+    pitch,
+    roll,
+    yaw,
     setVelocity,
     setAoA,
     setWaterDensity,
@@ -91,6 +96,9 @@ export function ConfigPanel() {
       mass: mass,
       payload_weight: payloadWeight,
       center_of_gravity: centerOfGravity,
+      pitch: pitch,
+      roll: roll,
+      yaw: yaw,
       project: projectId,
       wave_height: 0.0,
     };
@@ -275,6 +283,12 @@ export function ConfigPanel() {
           </div>
         </div>
       </div>
+
+      {/* Orientation correction */}
+      <OrientationPanel />
+
+      {/* Warning banner */}
+      <OrientationWarningBanner />
 
       {/* Run button */}
       <button

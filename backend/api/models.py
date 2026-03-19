@@ -74,6 +74,39 @@ class SimulationRun(models.Model):
         help_text="Refinement level for feature edges extracted by surfaceFeatureExtract",
     )
 
+    # Orientation correction (user-supplied, degrees)
+    pitch = models.FloatField(
+        default=0.0,
+        help_text="Pitch angle in degrees (rotation about Y axis)",
+    )
+    roll = models.FloatField(
+        default=0.0,
+        help_text="Roll angle in degrees (rotation about X axis)",
+    )
+    yaw = models.FloatField(
+        default=0.0,
+        help_text="Yaw angle in degrees (rotation about Z axis)",
+    )
+
+    # Orientation preview
+    orientation_preview_url = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text="Relative media URL of the orientation preview GLB",
+    )
+    geometry_dimensions = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Bounding-box dimensions after normalisation {chord_m, span_m, thickness_m}",
+    )
+
+    # Diagnostic: which original OBB axis was mapped to X/Y/Z
+    geometry_axes_detected = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="OBB axis mapping detected during STL orientation normalisation",
+    )
+
     # Post-processing / slicing
     slice_axis = models.CharField(
         max_length=1,
@@ -136,6 +169,20 @@ class SimulationRun(models.Model):
         null=True, blank=True,
         help_text="Yaw moment (Mz) averaged over last 20% of iterations, N·m",
     )
+
+    # Scalar results from post-processing pipeline
+    cl = models.FloatField(null=True, blank=True)
+    cd = models.FloatField(null=True, blank=True)
+    l_d_ratio = models.FloatField(null=True, blank=True)
+    cm_pitch = models.FloatField(null=True, blank=True)
+    cavitation_risk = models.BooleanField(null=True, blank=True)
+    sigma = models.FloatField(null=True, blank=True)
+    cavitation_onset_x_over_c = models.FloatField(null=True, blank=True)
+    cavitating_surface_fraction = models.FloatField(null=True, blank=True)
+    vortex_decay_rate = models.FloatField(null=True, blank=True)
+    omega_0 = models.FloatField(null=True, blank=True)
+    x_over_c_10pct_decay = models.FloatField(null=True, blank=True)
+    file_manifest = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

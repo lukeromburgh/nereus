@@ -40,11 +40,13 @@ services:
       ]
     volumes:
       - ./simulation_worker:/app
+      - ./backend:/backend # Django project for ORM access
       - ./data:/data # Worker reads files here, runs OpenFOAM, writes results
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       DJANGO_MEDIA_ROOT: /data/media
+      DJANGO_SETTINGS_MODULE: nereus_core.settings
     depends_on:
       redis:
         condition: service_healthy

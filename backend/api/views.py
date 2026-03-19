@@ -70,5 +70,7 @@ class SimulationRunViewSet(viewsets.ModelViewSet):
                 if ext == '.stl':
                     shutil.copy2(source_path, os.path.join(sim_dir, 'foil.stl'))
             
-            # Initiate Celery Handshake
+            # Fire the Celery simulation task (orientation preview is now
+            # handled client-side; the preview_stl_orientation task runs only
+            # inside the simulation worker's pre-flight, not on every upload).
             transaction.on_commit(lambda: run_hydro_simulation.delay(instance.id))

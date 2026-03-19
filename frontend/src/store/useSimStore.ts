@@ -86,6 +86,30 @@ interface SimulationState {
     size: [number, number, number],
   ) => void;
 
+  // Centred bounding box written once per result load by the centring effect.
+  // FlowDirectionArrow & FoilNoseMarker read this — stable, no per-frame recompute.
+  centredFoilBounds: {
+    min: [number, number, number];
+    max: [number, number, number];
+  } | null;
+  setCentredFoilBounds: (
+    bounds: {
+      min: [number, number, number];
+      max: [number, number, number];
+    } | null,
+  ) => void;
+
+  // Incremented once when a new run's result geometry finishes loading.
+  // Used as a stable trigger for centring and camera-fit effects.
+  geometryLoadedToken: number;
+  bumpGeometryLoadedToken: () => void;
+
+  // Scene-level offset applied to centre result geometry at world origin.
+  // Components (grid, flow arrow, nose marker) can read this if needed.
+  sceneOffset: [number, number, number];
+  gridFloorZ: number;
+  setSceneOffset: (offset: [number, number, number], floorZ: number) => void;
+
   // Post-processing
   enableBloom: boolean;
   enableSSAO: boolean;
@@ -121,6 +145,42 @@ interface SimulationState {
   setMass: (val: number) => void;
   setPayloadWeight: (val: number) => void;
   setCenterOfGravity: (val: [number, number, number]) => void;
+
+  // Orientation correction — values in degrees.
+  // The backend (trimesh euler_matrix) expects degrees and converts internally.
+  // The frontend converts to radians only for the Three.js live preview rotation.
+  pitch: number;
+  roll: number;
+  yaw: number;
+  setPitch: (val: number) => void;
+  setRoll: (val: number) => void;
+  setYaw: (val: number) => void;
+
+  // Orientation preview (from backend)
+  orientationPreviewUrl: string | null;
+  geometryDimensions: {
+    chord_m?: number;
+    span_m?: number;
+    thickness_m?: number;
+  } | null;
+  geometryAxesDetected: {
+    detected_chord_axis?: string;
+    detected_span_axis?: string;
+    detected_up_axis?: string;
+  } | null;
+  setOrientationPreview: (data: {
+    orientation_preview_url?: string;
+    geometry_dimensions?: {
+      chord_m?: number;
+      span_m?: number;
+      thickness_m?: number;
+    };
+    geometry_axes_detected?: {
+      detected_chord_axis?: string;
+      detected_span_axis?: string;
+      detected_up_axis?: string;
+    };
+  }) => void;
 
   startNewSim: (id: number) => void;
   selectSim: (id: number) => void;
@@ -210,6 +270,18 @@ export const useSimStore = create<SimulationState>((set) => ({
   setFoilBounds: (center, size) =>
     set(() => ({ foilCenter: center, foilSize: size })),
 
+  centredFoilBounds: null,
+  setCentredFoilBounds: (bounds) => set(() => ({ centredFoilBounds: bounds })),
+
+  geometryLoadedToken: 0,
+  bumpGeometryLoadedToken: () =>
+    set((state) => ({ geometryLoadedToken: state.geometryLoadedToken + 1 })),
+
+  sceneOffset: [0, 0, 0],
+  gridFloorZ: 0,
+  setSceneOffset: (offset, floorZ) =>
+    set(() => ({ sceneOffset: offset, gridFloorZ: floorZ })),
+
   colormap: "turbo",
   setColormap: (cm) => set({ colormap: cm }),
 
@@ -250,6 +322,25 @@ export const useSimStore = create<SimulationState>((set) => ({
   setCenterOfGravity: (val) => set({ centerOfGravity: val }),
   setSliceAxis: (axis) => set({ sliceAxis: axis }),
 
+  // Orientation correction — degrees (sent as-is in the launch payload)
+  pitch: 0,
+  roll: 0,
+  yaw: 0,
+  setPitch: (val) => set({ pitch: val }),
+  setRoll: (val) => set({ roll: val }),
+  setYaw: (val) => set({ yaw: val }),
+
+  // Orientation preview
+  orientationPreviewUrl: null,
+  geometryDimensions: null,
+  geometryAxesDetected: null,
+  setOrientationPreview: (data) =>
+    set(() => ({
+      orientationPreviewUrl: data.orientation_preview_url ?? null,
+      geometryDimensions: data.geometry_dimensions ?? null,
+      geometryAxesDetected: data.geometry_axes_detected ?? null,
+    })),
+
   startNewSim: (id) =>
     set({
       activeSimId: id,
@@ -263,6 +354,7 @@ export const useSimStore = create<SimulationState>((set) => ({
       totalFrames: 0,
       currentFrame: 0,
       isPlaying: false,
+      centredFoilBounds: null,
     }),
   selectSim: (id) =>
     set({
@@ -277,6 +369,7 @@ export const useSimStore = create<SimulationState>((set) => ({
       totalFrames: 0,
       currentFrame: 0,
       isPlaying: false,
+      centredFoilBounds: null,
     }),
   updateSim: (data) =>
     set(() => ({
@@ -284,5 +377,8 @@ export const useSimStore = create<SimulationState>((set) => ({
       logs: data.current_logs || "",
       resultMeshPath: data.result_mesh_path || null,
       resultSequencePath: data.result_sequence_path || null,
+      orientationPreviewUrl: data.orientation_preview_url || null,
+      geometryDimensions: data.geometry_dimensions || null,
+      geometryAxesDetected: data.geometry_axes_detected || null,
     })),
 }));
