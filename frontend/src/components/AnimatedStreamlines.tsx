@@ -15,7 +15,7 @@ import {
   CylinderGeometry,
   ShaderMaterial,
   InstancedBufferAttribute,
-  AdditiveBlending,
+  NormalBlending,
   DoubleSide,
 } from "three";
 import { useSimStore } from "../store/useSimStore";
@@ -45,7 +45,7 @@ const fragmentShader = /* glsl */ `
   varying float vAlpha;
 
   void main() {
-    gl_FragColor = vec4(vColor, vAlpha * 0.85);
+    gl_FragColor = vec4(vColor, vAlpha * 0.95);
   }
 `;
 
@@ -57,33 +57,14 @@ type StreamlineSeed = {
   length: number;
 };
 
-function generateStreamlineSeeds(): StreamlineSeed[] {
-  const seeds: StreamlineSeed[] = [];
-  for (let i = 0; i < STREAMLINE_COUNT; i++) {
-    // Fan out from upstream, converging around the hydrofoil shape
-    const spanZ = (i / (STREAMLINE_COUNT - 1) - 0.5) * 2.0; // -1 to 1
-    const vertY = (Math.random() - 0.5) * 0.6;
-
-    seeds.push({
-      origin: new Vector3(-3, vertY, spanZ * 0.8),
-      direction: new Vector3(1, 0, 0).normalize(),
-      speed: 0.8 + Math.random() * 1.5,
-      curvature: 0.1 + Math.random() * 0.3,
-      length: 6 + Math.random() * 3,
-    });
-  }
-  return seeds;
-}
-
 /** Evaluate a streamline position at parameter t ∈ [0, 1] */
 function evalStreamline(seed: StreamlineSeed, t: number): Vector3 {
   const { origin, curvature, length } = seed;
   const x = origin.x + t * length;
-  // Simulate flow deflection around a foil shape
-  const deflection =
-    curvature * Math.sin(t * Math.PI) * (1 - Math.abs(origin.z));
+  // Simulate flow deflection around foil shape
+  const deflection = curvature * Math.sin(t * Math.PI);
   const y = origin.y + deflection;
-  const z = origin.z * (1 + 0.1 * Math.sin(t * Math.PI * 2));
+  const z = origin.z + curvature * 0.3 * Math.sin(t * Math.PI * 2);
   return new Vector3(x, y, z);
 }
 
@@ -99,8 +80,35 @@ export function AnimatedStreamlines() {
   const meshRef = useRef<InstancedMesh>(null);
   const showStreamlines = useSimStore((s) => s.showStreamlines);
   const colormap = useSimStore((s) => s.colormap);
+  const foilCenter = useSimStore((s) => s.foilCenter);
+  const foilSize = useSimStore((s) => s.foilSize);
 
-  const seeds = useMemo(() => generateStreamlineSeeds(), []);
+  const seeds = useMemo(() => {
+    const span = foilSize[1];
+    const chord = foilSize[0];
+    const depth = foilSize[2];
+    const foilScale = Math.max(span, chord, 0.01);
+    const upstreamX = foilCenter[0] - chord * 3;
+    const totalLen = foilScale * 25;
+
+    const s: StreamlineSeed[] = [];
+    for (let i = 0; i < STREAMLINE_COUNT; i++) {
+      const frac = i / (STREAMLINE_COUNT - 1) - 0.5; // -0.5 to 0.5
+      // Spread across span (Y) and depth (Z)
+      const spanY = foilCenter[1] + frac * span * 1.6;
+      const depthFrac = ((i % 4) / 3 - 0.5) * depth * 1.5;
+      const vertZ = foilCenter[2] + depthFrac;
+
+      s.push({
+        origin: new Vector3(upstreamX, spanY, vertZ),
+        direction: new Vector3(1, 0, 0).normalize(),
+        speed: 1.0 + (i % 5) * 0.3,
+        curvature: foilScale * (0.15 + (i % 3) * 0.1),
+        length: totalLen,
+      });
+    }
+    return s;
+  }, [foilCenter, foilSize]);
 
   // Particle state: each particle has a parameter t along its streamline
   const particleT = useRef(new Float32Array(TOTAL_PARTICLES));
@@ -116,10 +124,12 @@ export function AnimatedStreamlines() {
     }
   }, []);
 
-  const geometry = useMemo(
-    () => new CylinderGeometry(0.002, 0.001, 0.04, 4, 1),
-    [],
-  );
+  const geometry = useMemo(() => {
+    const foilScale = Math.max(foilSize[0], foilSize[1], 0.01);
+    const r = foilScale * 0.06;
+    const h = foilScale * 0.8;
+    return new CylinderGeometry(r, r * 0.5, h, 5, 1);
+  }, [foilSize]);
 
   const material = useMemo(
     () =>
@@ -127,7 +137,7 @@ export function AnimatedStreamlines() {
         vertexShader,
         fragmentShader,
         transparent: true,
-        blending: AdditiveBlending,
+        blending: NormalBlending,
         depthWrite: false,
         side: DoubleSide,
       }),

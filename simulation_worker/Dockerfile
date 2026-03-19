@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip3 install --no-cache-dir --upgrade pip \
 	&& pip3 install --no-cache-dir celery redis pyvista meshio jinja2 requests trimesh pygltflib
-
-COPY . /app
+# Cache-bust: increment when source files change
+ARG CACHE_BUST=2COPY . /app
 WORKDIR /app
 
 CMD ["bash", "-lc", "source /opt/openfoam11/etc/bashrc && celery -A tasks worker --loglevel=info"]

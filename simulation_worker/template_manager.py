@@ -126,7 +126,7 @@ deltaT          1;
 writeControl    runTime;
 writeInterval   {{ write_interval }}; // Save every X steps for the UI to update
 purgeWrite      20; // Keep enough frames for the 10-frame playback HUD
-writeFormat     ascii;
+writeFormat     binary;
 writePrecision  6;
 
 functions
@@ -147,6 +147,15 @@ functions
 
         writeControl    runTime;
         writeInterval   1;
+        log             yes;
+    }
+
+    yPlus
+    {
+        type            yPlus;
+        libs            ("libfieldFunctionObjects.so");
+        patches         (foil);
+        writeControl    writeTime;
         log             yes;
     }
 }
@@ -377,7 +386,7 @@ FoamFile { version 2.0; format ascii; class dictionary; object snappyHexMeshDict
 
 castellatedMesh true;
 snap            true;
-addLayers       false; // Keep false for MVP to ensure stability
+addLayers       {{ enable_layers | lower }};
 
 geometry {
     foil.stl {
@@ -393,7 +402,12 @@ castellatedMeshControls {
     nCellsBetweenLevels 1;
     resolveFeatureAngle 30;
     allowFreeStandingZoneFaces true;
-    
+
+    features
+    (
+        {% if eMesh_available %}{ file "foil.eMesh"; level {{ feature_level }}; }{% endif %}
+    );
+
     refinementSurfaces {
         foil {
             level (3 4); // Min/Max refinement level
@@ -412,10 +426,37 @@ snapControls {
     nRelaxIter 5;
 }
 
+{% if enable_layers %}
+addLayersControls
+{
+    relativeSizes       false;
+    expansionRatio      {{ layer_expansion }};
+    firstLayerThickness {{ first_layer_thickness }};
+    minThickness        {{ first_layer_thickness * 0.1 }};
+    nGrow               0;
+    featureAngle        60;
+    nRelaxIter          5;
+    nSmoothSurfaceNormals 1;
+    nSmoothNormals      3;
+    nSmoothThickness    10;
+    maxFaceThicknessRatio 0.5;
+    maxThicknessToMedialRatio 0.3;
+    minMedianAxisAngle  90;
+    nBufferCellsNoExtrude 0;
+    nLayerIter          50;
+
+    layers
+    {
+        foil
+        {
+            nSurfaceLayers  {{ n_surface_layers }};
+        }
+    }
+}
+{% endif %}
+
 meshQualityControls
 {
-    // Minimal defaults for OpenFOAM v11 so snappyHexMesh can run.
-    // These can be tightened later once the MVP pipeline is stable.
     maxNonOrtho         65;
     maxBoundarySkewness 20;
     maxInternalSkewness 4;
@@ -438,6 +479,63 @@ meshQualityControls
 }
 
 mergeTolerance 1e-6;
+"""
+
+G_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class uniformDimensionedVectorField;
+           object g; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 1 -2 0 0 0 0];
+value           (0 0 -9.81);
+"""
+
+P_RGH_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class volScalarField; object p_rgh; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform 0;
+
+boundaryField {
+    inlet {
+        type            fixedFluxPressure;
+        gradient        uniform 0;
+        value           uniform 0;
+    }
+    outlet {
+        type            fixedValue;
+        value           uniform 0;
+    }
+    foil {
+        type            fixedFluxPressure;
+        gradient        uniform 0;
+        value           uniform 0;
+    }
+    walls {
+        type            fixedFluxPressure;
+        gradient        uniform 0;
+        value           uniform 0;
+    }
+}
+"""
+
+SURFACE_FEATURE_EXTRACT_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class dictionary;
+           object surfaceFeatureExtractDict; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+foil.stl
+{
+    extractionMethod    extractFromSurface;
+
+    extractFromSurfaceCoeffs
+    {
+        includedAngle   150;
+    }
+
+    writeObj            yes;
+}
 """
 
 class TemplateManager:
@@ -474,6 +572,12 @@ class TemplateManager:
         nu=1e-6,
         angle_of_attack=0.0,
         center_of_gravity=(0, 0, 0),
+        enable_layers=True,
+        n_surface_layers=5,
+        layer_expansion=1.2,
+        first_layer_thickness=1e-4,
+        feature_level=4,
+        enable_gravity=True,
     ):
         """
         Generates the initialized OpenFOAM dict structures based on user inputs.
@@ -493,8 +597,13 @@ class TemplateManager:
         # 1. Write the Velocity (U) dict with AoA-decomposed components
         self.write_file("0/U", U_TEMPLATE, {"ux": f"{ux:.6g}", "uz": f"{uz:.6g}"})
         
-        # 2. Write the Pressure (p) dict (Required to prevent solver crash)
-        self.write_file("0/p", P_TEMPLATE, {})
+        # 2. Write the Pressure dict — p_rgh when gravity is on, plain p otherwise
+        if enable_gravity:
+            self.write_file("0/p_rgh", P_RGH_TEMPLATE, {})
+            self.write_file("0/p", P_TEMPLATE, {})
+            self.write_file("constant/g", G_TEMPLATE, {})
+        else:
+            self.write_file("0/p", P_TEMPLATE, {})
 
         # 3. Turbulence BCs (k-omega SST)
         # Compute inlet turbulence quantities from freestream velocity.
@@ -531,11 +640,20 @@ class TemplateManager:
         self.write_file("constant/transportProperties", TRANSPORT_PROPERTIES_TEMPLATE, {"nu": nu})
         self.write_file("constant/turbulenceProperties", TURBULENCE_PROPERTIES_TEMPLATE, {})
         
-        # 4. Write the snappyHexMeshDict (The mesh shrink-wrap rules)
+        # 4. Write the surfaceFeatureExtractDict (edge refinement)
+        self.write_file("system/surfaceFeatureExtractDict", SURFACE_FEATURE_EXTRACT_TEMPLATE, {})
+
+        # 5. Write the snappyHexMeshDict (mesh shrink-wrap + layers + feature edges)
         self.write_file("system/snappyHexMeshDict", SHM_TEMPLATE, {
             "loc_x": location_in_mesh[0],
             "loc_y": location_in_mesh[1],
-            "loc_z": location_in_mesh[2]
+            "loc_z": location_in_mesh[2],
+            "enable_layers": enable_layers,
+            "n_surface_layers": n_surface_layers,
+            "layer_expansion": layer_expansion,
+            "first_layer_thickness": first_layer_thickness,
+            "feature_level": feature_level,
+            "eMesh_available": False,  # updated to True after surfaceFeatureExtract succeeds
         })
 
         # 5. Write the blockMeshDict (Base mesh required by snappyHexMesh)

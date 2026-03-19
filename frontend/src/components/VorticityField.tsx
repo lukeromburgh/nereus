@@ -21,7 +21,7 @@ import {
 import { useSimStore } from "../store/useSimStore";
 import { sampleColormap } from "../lib/colormaps";
 
-const PARTICLE_COUNT = 4000;
+const PARTICLE_COUNT = 600; // 300 per tip vortex
 const VORTEX_CORES = 2; // Two tip vortices (port + starboard)
 
 const vertexShader = /* glsl */ `
@@ -40,8 +40,9 @@ const vertexShader = /* glsl */ `
     vColor = aColor;
 
     vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
-    float dist = -mvPosition.z;
-    vAlpha = smoothstep(uFadeDistance, uFadeDistance * 0.3, dist) * 0.85;
+    // Constant alpha — distance-based fade was killing particles at most
+    // camera angles because dist = -mvPosition.z can go negative.
+    vAlpha = 0.85;
 
     gl_Position = projectionMatrix * mvPosition;
   }
@@ -52,74 +53,82 @@ const fragmentShader = /* glsl */ `
   varying vec3 vColor;
 
   void main() {
-    // Soft circular particle
-    vec2 uv = gl_PointCoord.xy * 2.0 - 1.0;
-    float r = length(uv);
-    if (r > 1.0) discard;
-    float softEdge = 1.0 - smoothstep(0.5, 1.0, r);
-
-    gl_FragColor = vec4(vColor, vAlpha * softEdge * 0.7);
+    gl_FragColor = vec4(vColor, vAlpha * 0.7);
   }
 `;
-
-function generateVortexParticles(colormap: string) {
-  const phases = new Float32Array(PARTICLE_COUNT);
-  const speeds = new Float32Array(PARTICLE_COUNT);
-  const radii = new Float32Array(PARTICLE_COUNT);
-  const colors = new Float32Array(PARTICLE_COUNT * 3);
-
-  const dummy = new Matrix4();
-  const initialMatrices: Matrix4[] = [];
-
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const coreIdx = i % VORTEX_CORES;
-    const sign = coreIdx === 0 ? 1 : -1;
-
-    // Spread particles along the wake (downstream X axis)
-    const downstream = Math.random() * 6 + 0.5;
-    const angle = Math.random() * Math.PI * 2;
-    const helixRadius = 0.05 + Math.random() * 0.15;
-
-    // Vortex core positions (tip vortices off each wing tip)
-    const coreY = 0;
-    const coreZ = sign * 0.8;
-
-    const x = downstream;
-    const y = coreY + Math.sin(angle) * helixRadius;
-    const z = coreZ + Math.cos(angle) * helixRadius;
-
-    const scale = 0.003 + Math.random() * 0.008;
-
-    dummy.identity();
-    dummy.makeScale(scale, scale, scale);
-    dummy.setPosition(x, y, z);
-
-    initialMatrices.push(dummy.clone());
-
-    phases[i] = angle;
-    speeds[i] = 0.5 + Math.random() * 2.0;
-    radii[i] = helixRadius;
-
-    // Color by downstream distance (0→1 normalized)
-    const t = downstream / 6.5;
-    const c = sampleColormap(colormap as never, t);
-    colors[i * 3 + 0] = c.r;
-    colors[i * 3 + 1] = c.g;
-    colors[i * 3 + 2] = c.b;
-  }
-
-  return { phases, speeds, radii, colors, initialMatrices };
-}
 
 export function VorticityField() {
   const meshRef = useRef<InstancedMesh>(null);
   const showVorticity = useSimStore((s) => s.showVorticity);
   const colormap = useSimStore((s) => s.colormap);
+  const foilCenter = useSimStore((s) => s.foilCenter);
+  const foilSize = useSimStore((s) => s.foilSize);
 
-  const { phases, speeds, radii, colors, initialMatrices } = useMemo(
-    () => generateVortexParticles(colormap),
-    [colormap],
-  );
+  // Derive wake geometry from actual foil bounds
+  const span = foilSize[1]; // Y extent = wingspan
+  const chord = foilSize[0]; // X extent
+  const foilScale = Math.max(span, chord, 0.01);
+  // Tip vortex cores at ± half-span in Y, at foil center Z
+  const coreYOffset = span / 2;
+  // Trail starts at mid-chord so helices appear attached to the foil
+  const trailStartX = foilCenter[0];
+  const trailLen = foilScale * 12; // 12× foil scale downstream
+  const particleSize = foilScale * 0.035;
+
+  const { phases, speeds, radii, colors, initialMatrices } = useMemo(() => {
+    const phases = new Float32Array(PARTICLE_COUNT);
+    const speeds = new Float32Array(PARTICLE_COUNT);
+    const radii = new Float32Array(PARTICLE_COUNT);
+    const colors = new Float32Array(PARTICLE_COUNT * 3);
+    const dummy = new Matrix4();
+    const initialMatrices: Matrix4[] = [];
+    const particlesPerCore = PARTICLE_COUNT / VORTEX_CORES;
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const coreIdx = i % VORTEX_CORES;
+      const sign = coreIdx === 0 ? 1 : -1;
+      const posInCore = Math.floor(i / VORTEX_CORES);
+      const frac = posInCore / particlesPerCore;
+
+      const downstream = frac * trailLen;
+      const turnsPerUnit = 2.0 / Math.max(foilScale, 0.01);
+      const angle = frac * Math.PI * 2 * turnsPerUnit * trailLen;
+      // Start with a very tight helix at the foil, expanding downstream
+      const helixRadius = foilScale * 0.02 + downstream * 0.008;
+
+      const x = trailStartX + downstream;
+      const y =
+        foilCenter[1] + sign * coreYOffset + Math.sin(angle) * helixRadius;
+      const z = foilCenter[2] + Math.cos(angle) * helixRadius;
+
+      dummy.identity();
+      dummy.makeScale(particleSize, particleSize, particleSize);
+      dummy.setPosition(x, y, z);
+      initialMatrices.push(dummy.clone());
+
+      phases[i] = angle;
+      speeds[i] = 0.8;
+      radii[i] = helixRadius;
+
+      const t = frac;
+      const c = sampleColormap(colormap as never, t * 0.7 + 0.05);
+      colors[i * 3 + 0] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+    return { phases, speeds, radii, colors, initialMatrices };
+  }, [
+    colormap,
+    foilCenter,
+    foilSize,
+    span,
+    chord,
+    foilScale,
+    coreYOffset,
+    trailStartX,
+    trailLen,
+    particleSize,
+  ]);
 
   const geometry = useMemo(() => new SphereGeometry(1, 6, 4), []);
 
@@ -183,27 +192,24 @@ export function VorticityField() {
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const coreIdx = i % VORTEX_CORES;
       const sign = coreIdx === 0 ? 1 : -1;
-      const coreZ = sign * 0.8;
 
       mesh.getMatrixAt(i, tempMatrix);
       tempPos.setFromMatrixPosition(tempMatrix);
 
-      // Helical rotation around vortex core
       const phase = phases[i];
       const speed = speeds[i];
       const radius = radii[i];
       const angle = phase + t * speed;
 
-      const newY = Math.sin(angle) * radius;
-      const newZ = coreZ + Math.cos(angle) * radius;
+      const newY =
+        foilCenter[1] + sign * coreYOffset + Math.sin(angle) * radius;
+      const newZ = foilCenter[2] + Math.cos(angle) * radius;
 
-      // Slow downstream drift
-      let newX = tempPos.x + delta * 0.15;
-      if (newX > 7) newX = 0.3 + Math.random() * 0.5; // recycle
+      let newX = tempPos.x + delta * foilScale * 1.5;
+      if (newX > trailStartX + trailLen) newX = trailStartX + foilScale * 0.05;
 
-      const scale = 0.003 + radii[i] * 0.04;
       tempMatrix.identity();
-      tempMatrix.makeScale(scale, scale, scale);
+      tempMatrix.makeScale(particleSize, particleSize, particleSize);
       tempMatrix.setPosition(newX, newY, newZ);
       mesh.setMatrixAt(i, tempMatrix);
     }

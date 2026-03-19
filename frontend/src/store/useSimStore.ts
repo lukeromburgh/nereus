@@ -78,6 +78,14 @@ interface SimulationState {
     cm: "turbo" | "viridis" | "inferno" | "plasma" | "magma" | "coolwarm",
   ) => void;
 
+  // Foil geometry bounds (set when frame mesh loads)
+  foilCenter: [number, number, number];
+  foilSize: [number, number, number]; // dx, dy, dz
+  setFoilBounds: (
+    center: [number, number, number],
+    size: [number, number, number],
+  ) => void;
+
   // Post-processing
   enableBloom: boolean;
   enableSSAO: boolean;
@@ -196,6 +204,11 @@ export const useSimStore = create<SimulationState>((set) => ({
     set((state) => ({ showVorticity: !state.showVorticity })),
   toggleStreamlines: () =>
     set((state) => ({ showStreamlines: !state.showStreamlines })),
+
+  foilCenter: [0, 0, 0],
+  foilSize: [0.1, 0.1, 0.1],
+  setFoilBounds: (center, size) =>
+    set(() => ({ foilCenter: center, foilSize: size })),
 
   colormap: "turbo",
   setColormap: (cm) => set({ colormap: cm }),

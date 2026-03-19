@@ -46,10 +46,32 @@ class SimulationRun(models.Model):
         help_text="Depth of the foil center below the water surface in meters",
     )
 
+    # Physics
+    enable_gravity = models.BooleanField(
+        default=True,
+        help_text="Enable gravity and use p_rgh pressure formulation",
+    )
+
     # Meshing
     mesh_density = models.FloatField(
         default=1.0,
         help_text="Dimensionless base-mesh density multiplier (higher = finer base mesh)",
+    )
+    enable_layers = models.BooleanField(
+        default=True,
+        help_text="Enable boundary layer addition in snappyHexMesh",
+    )
+    n_surface_layers = models.IntegerField(
+        default=5,
+        help_text="Number of boundary layers on the foil surface",
+    )
+    layer_expansion = models.FloatField(
+        default=1.2,
+        help_text="Expansion ratio between successive boundary layers",
+    )
+    feature_level = models.IntegerField(
+        default=4,
+        help_text="Refinement level for feature edges extracted by surfaceFeatureExtract",
     )
 
     # Post-processing / slicing
@@ -89,6 +111,30 @@ class SimulationRun(models.Model):
     convergence_series = models.JSONField(
         default=list,
         help_text="Residual/convergence series for the convergence plot",
+    )
+
+    # Wall y+ results from post-processing
+    wall_yplus_max = models.FloatField(
+        null=True, blank=True,
+        help_text="Maximum wall y+ on foil surface",
+    )
+    wall_yplus_mean = models.FloatField(
+        null=True, blank=True,
+        help_text="Mean wall y+ on foil surface",
+    )
+
+    # Moment results from post-processing
+    pitch_moment = models.FloatField(
+        null=True, blank=True,
+        help_text="Pitch moment (My) averaged over last 20% of iterations, N·m",
+    )
+    roll_moment = models.FloatField(
+        null=True, blank=True,
+        help_text="Roll moment (Mx) averaged over last 20% of iterations, N·m",
+    )
+    yaw_moment = models.FloatField(
+        null=True, blank=True,
+        help_text="Yaw moment (Mz) averaged over last 20% of iterations, N·m",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)

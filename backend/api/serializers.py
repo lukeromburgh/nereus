@@ -44,4 +44,14 @@ class SimulationRunSerializer(serializers.ModelSerializer):
             instance.metrics_series = self.initial_data['metrics_series']
         if 'convergence_series' in self.initial_data:
             instance.convergence_series = self.initial_data['convergence_series']
+        if 'pitch_moment' in self.initial_data:
+            instance.pitch_moment = self.initial_data['pitch_moment']
+        if 'roll_moment' in self.initial_data:
+            instance.roll_moment = self.initial_data['roll_moment']
+        if 'yaw_moment' in self.initial_data:
+            instance.yaw_moment = self.initial_data['yaw_moment']
+        if 'wall_yplus_max' in self.initial_data:
+            instance.wall_yplus_max = self.initial_data['wall_yplus_max']
+        if 'wall_yplus_mean' in self.initial_data:
+            instance.wall_yplus_mean = self.initial_data['wall_yplus_mean']
         return super().update(instance, validated_data)

@@ -157,14 +157,19 @@ export function Viewport() {
     totalFrames > 0
       ? (frameMapping[currentFrame]?.flow_lines_path ?? null)
       : null;
-  const pressureLinesUrl =
-    showPressureMap && pressureLinesPath
-      ? `${baseUrl}${pressureLinesPath}`
-      : null;
-  const flowLinesUrl =
-    showFlowLines && flowLinesPath ? `${baseUrl}${flowLinesPath}` : null;
+  // Render pressure colormap directly on the foil surface (frame mesh) so the
+  // PressureOverlay shader shows the gradient on the actual 3D geometry.
+  // Fall back to the server-generated iso-contour STL if no frame is available yet.
   const fallbackUrl = resultMeshPath ? `${baseUrl}${resultMeshPath}` : null;
   const assetPreviewUrl = selectedAssetFileUrl || null;
+
+  const pressureOverlayUrl = showPressureMap
+    ? (activeFrameUrl ??
+      fallbackUrl ??
+      (pressureLinesPath ? `${baseUrl}${pressureLinesPath}` : null))
+    : null;
+  const flowLinesUrl =
+    showFlowLines && flowLinesPath ? `${baseUrl}${flowLinesPath}` : null;
 
   const initialFitKey = `${activeSimId ?? "asset"}:${totalFrames}`;
 
@@ -175,7 +180,7 @@ export function Viewport() {
 
   // Include overlay urls/toggles so the camera-fit accounts for them when enabled.
   // Otherwise (especially for flow lines) they can load successfully but be entirely off-screen.
-  const fitKey = `${activeSimId ?? "asset"}:${totalFrames}:${currentFrame}:${activeFrameUrl || fallbackUrl || assetPreviewUrl || "none"}:${showPressureMap ? pressureLinesUrl || "none" : "off"}:${showFlowLines ? flowLinesUrl || "none" : "off"}:${fitNonce}`;
+  const fitKey = `${activeSimId ?? "asset"}:${totalFrames}:${currentFrame}:${activeFrameUrl || fallbackUrl || assetPreviewUrl || "none"}:${showPressureMap ? pressureOverlayUrl || "none" : "off"}:${showFlowLines ? flowLinesUrl || "none" : "off"}:${fitNonce}`;
 
   const neighborUrls = (() => {
     if (totalFrames <= 0) return [];
@@ -270,11 +275,12 @@ export function Viewport() {
               )}
 
               {/* Overlay layers */}
-              <PressureOverlay url={pressureLinesUrl} opacity={0.88} />
-              <OverlayFrame url={flowLinesUrl} color="#3b82f6" opacity={0.85} />
+              <PressureOverlay url={pressureOverlayUrl} opacity={0.88} />
             </Bounds>
 
-            {/* Procedural visualization layers (outside Bounds to not affect camera fit) */}
+            {/* Overlay + procedural layers outside Bounds so large geometries
+                don't push the camera back and lose the foil from view. */}
+            <OverlayFrame url={flowLinesUrl} color="#3b82f6" opacity={0.85} />
             <VorticityField />
             <AnimatedStreamlines />
           </Stage>

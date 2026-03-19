@@ -9,6 +9,7 @@ import {
 } from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { useSimStore } from "../store/useSimStore";
 
 type CachedFrame =
   | {
@@ -130,13 +131,14 @@ export type SimulationFrameProps = {
 export function SimulationFrame({
   activeUrl,
   neighborUrls,
-  showPressureMap: _showPressureMap,
+  showPressureMap,
   onActiveLoaded,
 }: SimulationFrameProps) {
   const cacheRef = useRef(
     new Map<string, { lastUsed: number; frame: CachedFrame }>(),
   );
   const [activeFrame, setActiveFrame] = useState<CachedFrame | null>(null);
+  const setFoilBounds = useSimStore((s) => s.setFoilBounds);
 
   const keepSet = useMemo(
     () => new Set(neighborUrls.filter(Boolean)),
@@ -170,6 +172,19 @@ export function SimulationFrame({
         const frame = await ensure(activeUrl);
         if (cancelled) return;
         setActiveFrame(frame);
+
+        // Publish foil bounds so procedural overlays can position themselves
+        if (frame.kind === "stl" && frame.geometry.boundingBox) {
+          const bb = frame.geometry.boundingBox;
+          const cx = (bb.min.x + bb.max.x) / 2;
+          const cy = (bb.min.y + bb.max.y) / 2;
+          const cz = (bb.min.z + bb.max.z) / 2;
+          const dx = bb.max.x - bb.min.x;
+          const dy = bb.max.y - bb.min.y;
+          const dz = bb.max.z - bb.min.z;
+          setFoilBounds([cx, cy, cz], [dx, dy, dz]);
+        }
+
         onActiveLoaded?.();
 
         // Preload neighbors.
@@ -220,7 +235,7 @@ export function SimulationFrame({
         roughness={0.35}
         side={DoubleSide}
         transparent
-        opacity={0.9}
+        opacity={showPressureMap ? 0.18 : 0.9}
       />
     </mesh>
   );

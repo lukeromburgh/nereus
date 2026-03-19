@@ -10,7 +10,7 @@ import threading
 import time
 import pyvista as pv
 import shutil
-from template_manager import TemplateManager
+from template_manager import TemplateManager, SHM_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
@@ -459,6 +459,144 @@ def _parse_forces(case_dir, *, max_points=5000):
     return {}
 
 
+def _parse_moments(case_dir):
+    """Parse moment.dat from postProcessing/forces and return the mean of the last
+    20 % of time steps as (Mx, My, Mz).  Returns (None, None, None) on failure."""
+    base = os.path.join(case_dir, "postProcessing", "forces")
+    if not os.path.isdir(base):
+        return None, None, None
+
+    time_dirs = sorted(
+        (e for e in os.listdir(base) if os.path.isdir(os.path.join(base, e))),
+        key=lambda s: float(s) if s.replace(".", "", 1).isdigit() else 0.0,
+        reverse=True,
+    )
+
+    for time_dir in time_dirs:
+        candidate = os.path.join(base, time_dir, "moment.dat")
+        if not os.path.exists(candidate):
+            continue
+        try:
+            rows = []  # list of (Mx, My, Mz)
+            with open(candidate, "r", encoding="utf-8", errors="ignore") as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    # Extract all parenthesised triplets
+                    vectors = []
+                    buf = ""
+                    depth = 0
+                    for ch in line:
+                        if ch == "(":
+                            depth += 1
+                            buf = ""
+                        elif ch == ")":
+                            if depth > 0:
+                                depth -= 1
+                                vals = buf.strip().split()
+                                if len(vals) == 3:
+                                    try:
+                                        vectors.append([float(v) for v in vals])
+                                    except Exception:
+                                        pass
+                        else:
+                            if depth > 0:
+                                buf += ch
+                    # moment.dat: (pressureMoment) (viscousMoment) [optional (porousMoment)]
+                    if len(vectors) >= 2:
+                        mx = vectors[0][0] + vectors[1][0]
+                        my = vectors[0][1] + vectors[1][1]
+                        mz = vectors[0][2] + vectors[1][2]
+                        rows.append((mx, my, mz))
+
+            if not rows:
+                continue
+
+            # Average over the last 20 % of rows (minimum 1)
+            tail_n = max(1, len(rows) // 5)
+            tail = rows[-tail_n:]
+            mx_mean = sum(r[0] for r in tail) / len(tail)
+            my_mean = sum(r[1] for r in tail) / len(tail)
+            mz_mean = sum(r[2] for r in tail) / len(tail)
+            return mx_mean, my_mean, mz_mean
+        except Exception as e:
+            logger.warning(f"Failed parsing moment.dat: {e}")
+
+    return None, None, None
+
+
+def _parse_yplus(case_dir):
+    """Extract max and mean y+ from postProcessing/yPlus output.
+
+    OpenFOAM writes a summary line to log.simpleFoam such as:
+        Patch foil y+ : min/max/average = 0.12 / 45.3 / 2.3
+    and also writes a field file under postProcessing/yPlus/<time>/yPlus.dat.
+    We prefer the field file; fall back to scanning the solver log.
+    """
+    # -- Try postProcessing/yPlus/<time>/yPlus.dat (field-average output) --
+    base = os.path.join(case_dir, "postProcessing", "yPlus")
+    if os.path.isdir(base):
+        time_dirs = sorted(
+            (e for e in os.listdir(base) if os.path.isdir(os.path.join(base, e))),
+            key=lambda s: float(s) if s.replace(".", "", 1).isdigit() else 0.0,
+            reverse=True,
+        )
+        for td in time_dirs:
+            dat = os.path.join(base, td, "yPlus.dat")
+            if not os.path.exists(dat):
+                continue
+            try:
+                yplus_vals = []
+                with open(dat, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            try:
+                                yplus_vals.append(float(parts[-1]))
+                            except Exception:
+                                pass
+                if yplus_vals:
+                    return max(yplus_vals), sum(yplus_vals) / len(yplus_vals)
+            except Exception as e:
+                logger.warning(f"Failed reading yPlus.dat: {e}")
+
+    # -- Fallback: scan the solver log for the summary line --
+    for log_name in ("log.simpleFoam", "log.pimpleFoam", "log.interFoam"):
+        log_path = os.path.join(case_dir, log_name)
+        if not os.path.exists(log_path):
+            continue
+        try:
+            yplus_max = None
+            yplus_mean = None
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    # e.g. "    patch foil y+ : min = 0.12, max = 45.3, average = 2.3"
+                    lower = line.lower()
+                    if "y+" in lower and ("max" in lower or "average" in lower):
+                        m_max = re.search(r"max\s*=?\s*([0-9.eE+\-]+)", line, re.IGNORECASE)
+                        m_avg = re.search(r"ave(?:rage)?\s*=?\s*([0-9.eE+\-]+)", line, re.IGNORECASE)
+                        if m_max:
+                            try:
+                                yplus_max = float(m_max.group(1))
+                            except Exception:
+                                pass
+                        if m_avg:
+                            try:
+                                yplus_mean = float(m_avg.group(1))
+                            except Exception:
+                                pass
+            if yplus_max is not None:
+                return yplus_max, yplus_mean
+        except Exception as e:
+            logger.warning(f"Failed scanning {log_name} for y+: {e}")
+
+    return None, None
+
+
 def post_process_results_sequence(case_dir, sim_id, *, frame_count=10, slice_axis='y'):
     """Export a temporal sequence of axis-aligned slices for playback.
 
@@ -722,16 +860,42 @@ def post_process_results_sequence(case_dir, sim_id, *, frame_count=10, slice_axi
                     initial_step_length=step,
                     min_step_length=max(step * 0.1, 1e-6),
                     max_step_length=max(step * 2.0, 1e-5),
-                    max_steps=1200,
+                    max_steps=400,
                     terminal_speed=1e-6,
                     compute_vorticity=False,
                 )
                 if streams is None or int(getattr(streams, "n_cells", 0)) <= 0:
                     return None
 
+                # Clip streamlines to a padded box around the foil so they don't span
+                # the full CFD domain (which is typically 10–20× larger than the foil).
+                if foil_surface is not None:
+                    try:
+                        fb = foil_surface.bounds
+                        pad_x = (fb[1] - fb[0]) * 4
+                        pad_y = (fb[3] - fb[2]) * 6
+                        pad_z = (fb[5] - fb[4]) * 6
+                        clip_b = [
+                            fb[0] - pad_x, fb[1] + pad_x * 2,
+                            fb[2] - pad_y, fb[3] + pad_y,
+                            fb[4] - pad_z, fb[5] + pad_z,
+                        ]
+                        clipped = streams.clip_box(clip_b, invert=False)
+                        if clipped is not None and int(getattr(clipped, "n_cells", 0)) > 0:
+                            # clip_box may return UnstructuredGrid; convert back to
+                            # PolyData so .tube() is available.
+                            if not isinstance(clipped, pv.PolyData):
+                                clipped = clipped.extract_surface()
+                            streams = clipped
+                    except Exception:
+                        pass
+
                 # Make streamlines visibly thick in the viewport; keep tri-count controlled by
                 # streamline count/steps + decimation (see below).
-                r = _tube_radius_from_bounds(volume.bounds, 0.002)
+                # Use a small fraction of the FOIL bounds (not domain bounds) so tubes
+                # stay thin relative to the hydrofoil geometry.
+                tube_bounds_src = foil_surface.bounds if foil_surface is not None else volume.bounds
+                r = _tube_radius_from_bounds(tube_bounds_src, 0.006)
                 tubed = streams.tube(radius=r, n_sides=6).triangulate()
 
                 # Best-effort decimation to keep STL payloads browser-friendly.
@@ -963,6 +1127,25 @@ def post_process_results_sequence(case_dir, sim_id, *, frame_count=10, slice_axi
                 "preview_mesh_path": None,
             }
 
+def compute_first_layer_thickness(velocity, nu, char_len, y_plus_target=1.0):
+    """
+    Flat-plate Cf approximation (Prandtl) for first cell-layer height.
+
+    Re_L  = V * L / nu
+    Cf    ≈ 0.026 * Re_L^(-1/7)
+    tau_w = 0.5 * rho * V^2 * Cf
+    u_tau = sqrt(tau_w / rho)
+    y1    = y+ * nu / u_tau
+    """
+    rho = 1025.0
+    Re_L = velocity * char_len / nu
+    Cf = 0.026 * Re_L ** (-1.0 / 7.0)
+    tau_w = 0.5 * rho * velocity ** 2 * Cf
+    u_tau = (tau_w / rho) ** 0.5
+    y1 = y_plus_target * nu / u_tau
+    return y1
+
+
 @app.task(name='tasks.run_hydro_simulation', bind=True)
 def run_hydro_simulation(self, sim_id):
     logger.info(f"Received Simulation request: {sim_id}")
@@ -988,6 +1171,11 @@ def run_hydro_simulation(self, sim_id):
         angle_of_attack = run_data.get('angle_of_attack', 0.0)
         center_of_gravity = run_data.get('center_of_gravity', [0, 0, 0])
         submersion_depth = run_data.get('submersion_depth', 0.5)
+        enable_layers = run_data.get('enable_layers', True)
+        enable_gravity = run_data.get('enable_gravity', True)
+        n_surface_layers = run_data.get('n_surface_layers', 5)
+        layer_expansion = run_data.get('layer_expansion', 1.2)
+        feature_level = run_data.get('feature_level', 4)
 
         try:
             angle_of_attack = float(angle_of_attack)
@@ -1012,6 +1200,7 @@ def run_hydro_simulation(self, sim_id):
         mesh_density = max(0.5, min(2.0, mesh_density))
 
         # Phase 1.5: Pre-Flight Surface Check & Dynamic Bounding Box
+        characteristic_len = 1.0  # default; overwritten by STL bounds below
         stl_path = _ensure_foil_stl(case_dir)
         default_domain = {
             "x_min": -5.0,
@@ -1134,6 +1323,17 @@ def run_hydro_simulation(self, sim_id):
             except Exception as e:
                 logger.error(f"Failed STL bounds/domain derivation: {e}")
 
+        # Compute first boundary-layer cell height from flat-plate Cf approximation
+        nu = 1.0e-6  # kinematic viscosity of water (m^2/s)
+        y_plus_target = run_data.get('y_plus_target', 1.0)
+        y1 = compute_first_layer_thickness(
+            velocity=velocity,
+            nu=nu,
+            char_len=characteristic_len,
+            y_plus_target=y_plus_target,
+        )
+        logger.info(f"Computed first-layer thickness y1={y1:.6e} m (y+={y_plus_target})")
+
         # IMPORTANT: ensure reruns don't reuse stale time directories/meshes.
         # OpenFOAM will happily pick up old time folders if they exist; if the mesh
         # changes between attempts, this can cause field-size mismatches.
@@ -1158,14 +1358,82 @@ def run_hydro_simulation(self, sim_id):
             velocity=velocity, 
             water_density=density,
             location_in_mesh=location_in_mesh,
-            write_interval=5,
+            max_iterations=500,
+            write_interval=25,
             domain=domain,
             mesh_cells=mesh_cells,
             angle_of_attack=angle_of_attack,
             center_of_gravity=center_of_gravity,
+            enable_layers=enable_layers,
+            n_surface_layers=n_surface_layers,
+            layer_expansion=layer_expansion,
+            first_layer_thickness=y1,
+            feature_level=feature_level,
+            enable_gravity=enable_gravity,
         )
 
-        # Phase 2: MESHING
+        # Phase 2: MESHING — Feature extraction, then blockMesh, then snappyHexMesh
+        logger.info(f"Executing surfaceFeatureExtract in {case_dir}")
+        ok, logs = run_and_stream_openfoam(
+            sim_id=sim_id,
+            case_dir=case_dir,
+            cmd=["surfaceFeatureExtract"],
+            status="MESHING",
+            start_message="Extracting surface features (edge refinement)...",
+        )
+        if not ok:
+            logger.error("surfaceFeatureExtract failed")
+            patch_django_status(sim_id, "FAILED", error_log=logs)
+            return "Feature Extraction Failed"
+
+        # Locate foil.eMesh — OpenFOAM 11 writes it to constant/triSurface/ by
+        # default, but some builds place it in extendedFeatureEdgeMesh/.
+        # Resolve wherever it landed and ensure it exists at the canonical path
+        # before re-rendering snappyHexMeshDict with eMesh_available=True/False.
+        expected_emesh = os.path.join(case_dir, "constant", "triSurface", "foil.eMesh")
+        if not os.path.exists(expected_emesh):
+            alt_paths = [
+                os.path.join(case_dir, "constant", "extendedFeatureEdgeMesh", "foil.eMesh"),
+                os.path.join(case_dir, "foil.eMesh"),
+            ]
+            for candidate in alt_paths:
+                if os.path.exists(candidate):
+                    shutil.copy2(candidate, expected_emesh)
+                    logger.info(f"Copied eMesh from {candidate} to {expected_emesh}")
+                    break
+            else:
+                # Broad fallback walk
+                for root, _dirs, files in os.walk(case_dir):
+                    for fname in files:
+                        if fname.endswith(".eMesh"):
+                            shutil.copy2(os.path.join(root, fname), expected_emesh)
+                            logger.info(f"Copied eMesh from {root}/{fname} to {expected_emesh}")
+                            break
+                    else:
+                        continue
+                    break
+
+        eMesh_available = os.path.exists(expected_emesh)
+        if not eMesh_available:
+            logger.warning(
+                "foil.eMesh not found after surfaceFeatureExtract — "
+                "snappyHexMesh will run without feature edge refinement"
+            )
+
+        # Re-render snappyHexMeshDict now that eMesh_available is known.
+        # This overwrites the initial version written by initialize_case.
+        template_manager.write_file("system/snappyHexMeshDict", SHM_TEMPLATE, {
+            "loc_x": location_in_mesh[0],
+            "loc_y": location_in_mesh[1],
+            "loc_z": location_in_mesh[2],
+            "enable_layers": enable_layers,
+            "n_surface_layers": n_surface_layers,
+            "layer_expansion": layer_expansion,
+            "first_layer_thickness": y1,
+            "feature_level": feature_level,
+            "eMesh_available": eMesh_available,
+        })
+
         logger.info(f"Executing blockMesh in {case_dir}")
         ok, logs = run_and_stream_openfoam(
             sim_id=sim_id,
@@ -1232,16 +1500,42 @@ def run_hydro_simulation(self, sim_id):
         slice_axis = (run_data.get("slice_axis") or "y")
         results = post_process_results_sequence(case_dir, sim_id, frame_count=10, slice_axis=slice_axis)
 
-        patch_django_status(
-            sim_id,
-            "COMPLETED",
-            error_log="Simulation Success",
-            result_mesh_path=results.get("preview_mesh_path"),
-            result_sequence_path=results.get("result_sequence_path"),
-            frame_mapping=results.get("frame_mapping"),
-            metrics_series=results.get("metrics_series"),
-            convergence_series=results.get("convergence_series"),
-        )
+        # Parse moments from postProcessing and include in the final PATCH
+        roll_moment, pitch_moment, yaw_moment = _parse_moments(case_dir)
+        if pitch_moment is not None:
+            logger.info(
+                f"Moments: pitch={pitch_moment:.4f} Nm, roll={roll_moment:.4f} Nm, yaw={yaw_moment:.4f} Nm"
+            )
+
+        # Parse wall y+ from postProcessing/yPlus or solver log
+        wall_yplus_max, wall_yplus_mean = _parse_yplus(case_dir)
+        if wall_yplus_max is not None:
+            logger.info(f"Wall y+: max={wall_yplus_max:.3f}, mean={wall_yplus_mean:.3f}")
+
+        completed_payload = {
+            "status": "COMPLETED",
+            "current_logs": "Simulation Success",
+            "result_mesh_path": results.get("preview_mesh_path"),
+            "result_sequence_path": results.get("result_sequence_path"),
+            "frame_mapping": results.get("frame_mapping"),
+            "metrics_series": results.get("metrics_series"),
+            "convergence_series": results.get("convergence_series"),
+        }
+        if pitch_moment is not None:
+            completed_payload["pitch_moment"] = pitch_moment
+        if roll_moment is not None:
+            completed_payload["roll_moment"] = roll_moment
+        if yaw_moment is not None:
+            completed_payload["yaw_moment"] = yaw_moment
+        if wall_yplus_max is not None:
+            completed_payload["wall_yplus_max"] = wall_yplus_max
+        if wall_yplus_mean is not None:
+            completed_payload["wall_yplus_mean"] = wall_yplus_mean
+
+        try:
+            requests.patch(f"{DJANGO_API_URL}/{sim_id}/", json=completed_payload)
+        except Exception as e:
+            logger.error(f"Failed to patch completed status: {e}")
         return f"Simulation {sim_id} Finished"
 
     except DivergenceError:
