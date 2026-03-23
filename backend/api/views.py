@@ -36,6 +36,7 @@ class SimulationRunViewSet(viewsets.ModelViewSet):
         run = self.get_object()
 
         # Keep the payload explicit and stable for the frontend sync-loop.
+        # Include direct VTP overlay helpers for pressure/vorticity/flow highlighting.
         return Response(
             {
                 'id': run.id,
@@ -44,6 +45,8 @@ class SimulationRunViewSet(viewsets.ModelViewSet):
                 'frame_mapping': run.frame_mapping or [],
                 'metrics_series': run.metrics_series or [],
                 'convergence_series': run.convergence_series or [],
+                'skin_friction_lines_path': f"/media/simulations/{run.id}/skin_friction_lines.vtp",
+                'q_criterion_isosurface_path': f"/media/simulations/{run.id}/q_criterion_isosurface.vtp",
             }
         )
 

@@ -3,7 +3,7 @@ import axios from "axios";
 import { AnimatePresence, motion } from "framer-motion";
 import { Sidebar } from "./components/Sidebar";
 import { TopNavbar } from "./components/TopNavbar";
-import { Viewport } from "./components/Viewport";
+import { VtkViewport } from "./components/VtkViewport";
 import { ConfigPanel } from "./components/ConfigPanel";
 import { LogConsole } from "./components/LogConsole";
 import { AnalysisPanel } from "./components/AnalysisPanel";
@@ -14,32 +14,48 @@ export default function App() {
     useSimStore();
   const [refreshNonce, setRefreshNonce] = useState(0);
 
-  // The Observer: Polling Hook natively integrated into the Layout
+  // The Observer: Polling Hook with exponential back-off (2 s → 60 s cap)
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
+    let timer: ReturnType<typeof setTimeout>;
+    let cancelled = false;
 
-    if (
+    const isActive =
       activeSimId &&
-      (status === "PENDING" || status === "RUNNING" || status === "MESHING")
-    ) {
-      interval = setInterval(async () => {
-        try {
-          const { data } = await axios.get(
-            `http://localhost:8000/api/runs/${activeSimId}/`,
-          );
-          updateSim(data);
+      (status === "PENDING" || status === "RUNNING" || status === "MESHING");
 
-          if (data.status === "COMPLETED" || data.status === "FAILED") {
-            clearInterval(interval);
-          }
-        } catch (error) {
-          console.error("Polling error fetching run:", error);
-        }
-      }, 2000);
+    if (!isActive) return;
+
+    const INITIAL_MS = 2_000;
+    const MAX_MS = 60_000;
+    let delay = INITIAL_MS;
+
+    async function poll() {
+      if (cancelled) return;
+      try {
+        const { data } = await axios.get(
+          `http://localhost:8000/api/runs/${activeSimId}/`,
+        );
+        if (cancelled) return;
+        updateSim(data);
+
+        // Terminal state — stop polling
+        if (data.status === "COMPLETED" || data.status === "FAILED") return;
+      } catch (error) {
+        console.error("Polling error fetching run:", error);
+      }
+
+      // Schedule next poll with back-off
+      delay = Math.min(delay * 1.5, MAX_MS);
+      timer = setTimeout(poll, delay);
     }
 
-    // Cleanup loop
-    return () => clearInterval(interval);
+    // First poll after the initial delay
+    timer = setTimeout(poll, INITIAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [activeSimId, status, updateSim]);
 
   // Post-run analysis loader (Temporal Geometry Pipeline)
@@ -88,9 +104,9 @@ export default function App() {
         </aside>
 
         {/* 2. Center: The 3D Physics Engine */}
-        <main className="flex-1 relative flex flex-col">
-          <div className="flex-1 bg-black">
-            <Viewport />
+        <main className="flex-1 relative flex flex-col min-h-0">
+          <div className="flex-1 bg-black min-h-0 overflow-hidden">
+            <VtkViewport />
           </div>
 
           {/* Bottom: The Log Stream */}

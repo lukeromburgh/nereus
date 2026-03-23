@@ -78,39 +78,13 @@ interface SimulationState {
     cm: "turbo" | "viridis" | "inferno" | "plasma" | "magma" | "coolwarm",
   ) => void;
 
-  // Foil geometry bounds (set when frame mesh loads)
-  foilCenter: [number, number, number];
-  foilSize: [number, number, number]; // dx, dy, dz
-  setFoilBounds: (
-    center: [number, number, number],
-    size: [number, number, number],
+  // VTK scene bounds [xMin, xMax, yMin, yMax, zMin, zMax] set when geometry loads.
+  vtkSceneBounds: [number, number, number, number, number, number] | null;
+  setVtkSceneBounds: (
+    bounds: [number, number, number, number, number, number] | null,
   ) => void;
 
-  // Centred bounding box written once per result load by the centring effect.
-  // FlowDirectionArrow & FoilNoseMarker read this — stable, no per-frame recompute.
-  centredFoilBounds: {
-    min: [number, number, number];
-    max: [number, number, number];
-  } | null;
-  setCentredFoilBounds: (
-    bounds: {
-      min: [number, number, number];
-      max: [number, number, number];
-    } | null,
-  ) => void;
-
-  // Incremented once when a new run's result geometry finishes loading.
-  // Used as a stable trigger for centring and camera-fit effects.
-  geometryLoadedToken: number;
-  bumpGeometryLoadedToken: () => void;
-
-  // Scene-level offset applied to centre result geometry at world origin.
-  // Components (grid, flow arrow, nose marker) can read this if needed.
-  sceneOffset: [number, number, number];
-  gridFloorZ: number;
-  setSceneOffset: (offset: [number, number, number], floorZ: number) => void;
-
-  // Post-processing
+  // Post-processing (kept as UI toggles; currently no-ops with VTK.js renderer)
   enableBloom: boolean;
   enableSSAO: boolean;
   toggleBloom: () => void;
@@ -148,7 +122,7 @@ interface SimulationState {
 
   // Orientation correction — values in degrees.
   // The backend (trimesh euler_matrix) expects degrees and converts internally.
-  // The frontend converts to radians only for the Three.js live preview rotation.
+  // VTK.js applies these directly via actor.setOrientation().
   pitch: number;
   roll: number;
   yaw: number;
@@ -265,25 +239,11 @@ export const useSimStore = create<SimulationState>((set) => ({
   toggleStreamlines: () =>
     set((state) => ({ showStreamlines: !state.showStreamlines })),
 
-  foilCenter: [0, 0, 0],
-  foilSize: [0.1, 0.1, 0.1],
-  setFoilBounds: (center, size) =>
-    set(() => ({ foilCenter: center, foilSize: size })),
-
-  centredFoilBounds: null,
-  setCentredFoilBounds: (bounds) => set(() => ({ centredFoilBounds: bounds })),
-
-  geometryLoadedToken: 0,
-  bumpGeometryLoadedToken: () =>
-    set((state) => ({ geometryLoadedToken: state.geometryLoadedToken + 1 })),
-
-  sceneOffset: [0, 0, 0],
-  gridFloorZ: 0,
-  setSceneOffset: (offset, floorZ) =>
-    set(() => ({ sceneOffset: offset, gridFloorZ: floorZ })),
-
   colormap: "turbo",
   setColormap: (cm) => set({ colormap: cm }),
+
+  vtkSceneBounds: null,
+  setVtkSceneBounds: (bounds) => set({ vtkSceneBounds: bounds }),
 
   enableBloom: true,
   enableSSAO: true,
@@ -320,7 +280,6 @@ export const useSimStore = create<SimulationState>((set) => ({
   setMass: (val) => set({ mass: val }),
   setPayloadWeight: (val) => set({ payloadWeight: val }),
   setCenterOfGravity: (val) => set({ centerOfGravity: val }),
-  setSliceAxis: (axis) => set({ sliceAxis: axis }),
 
   // Orientation correction — degrees (sent as-is in the launch payload)
   pitch: 0,
@@ -354,7 +313,6 @@ export const useSimStore = create<SimulationState>((set) => ({
       totalFrames: 0,
       currentFrame: 0,
       isPlaying: false,
-      centredFoilBounds: null,
     }),
   selectSim: (id) =>
     set({
@@ -369,7 +327,6 @@ export const useSimStore = create<SimulationState>((set) => ({
       totalFrames: 0,
       currentFrame: 0,
       isPlaying: false,
-      centredFoilBounds: null,
     }),
   updateSim: (data) =>
     set(() => ({

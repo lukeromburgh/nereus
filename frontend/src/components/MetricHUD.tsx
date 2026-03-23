@@ -32,8 +32,8 @@ function MiniSparkline({
   currentFrame: number;
 }) {
   return (
-    <div className="h-6 w-16">
-      <ResponsiveContainer width="100%" height="100%">
+    <div className="h-6 w-16" style={{ minWidth: 40, minHeight: 20 }}>
+      <ResponsiveContainer width="100%" height="100%" minWidth={40}>
         <AreaChart
           data={data}
           margin={{ top: 1, right: 0, bottom: 1, left: 0 }}
@@ -278,8 +278,8 @@ export function MetricHUD() {
               {formatNumber(current?.ld_ratio, 3)}
             </span>
           </div>
-          <div className="h-14">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-14" style={{ minWidth: 80 }}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={80}>
               <LineChart
                 data={augmentedData}
                 margin={{ top: 4, right: 6, bottom: 0, left: -12 }}

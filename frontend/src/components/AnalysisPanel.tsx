@@ -11,7 +11,6 @@ import {
   YAxis,
 } from "recharts";
 import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import {
   Activity,
   TrendingUp,
@@ -127,8 +126,8 @@ function MetricCard({
       </div>
 
       {/* Sparkline */}
-      <div className="h-10 -mx-1">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="h-10 -mx-1" style={{ minWidth: 60 }}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={60}>
           <AreaChart
             data={data}
             margin={{ top: 2, right: 0, bottom: 0, left: 0 }}
@@ -268,13 +267,7 @@ export function AnalysisPanel() {
     setVisibleResiduals((prev) => ({ ...prev, [field]: !prev[field] }));
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 20 }}
-      transition={{ duration: 0.3, ease: "easeOut" }}
-      className="flex flex-col gap-3 scrollbar-dark"
-    >
+    <div className="flex flex-col gap-3 scrollbar-dark">
       {/* Section header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -387,13 +380,13 @@ export function AnalysisPanel() {
           </div>
         </div>
 
-        <div className="h-44">
+        <div className="h-44" style={{ minWidth: 100 }}>
           {convergenceSeries.length === 0 && residualEntries.length === 0 ? (
             <div className="flex items-center justify-center h-full text-2xs text-slate-600">
               No residual data available
             </div>
           ) : residualEntries.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={100}>
               <LineChart
                 data={residualEntries}
                 margin={{ top: 4, right: 8, bottom: 0, left: -8 }}
@@ -443,7 +436,7 @@ export function AnalysisPanel() {
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={100}>
               <LineChart
                 data={convergenceSeries}
                 margin={{ top: 4, right: 8, bottom: 0, left: -8 }}
@@ -511,6 +504,6 @@ export function AnalysisPanel() {
           Residuals CSV
         </button>
       </div>
-    </motion.div>
+    </div>
   );
 }

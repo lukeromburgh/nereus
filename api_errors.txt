@@ -1,0 +1,41 @@
+﻿
+[18/Mar/2026 17:15:32] "PATCH /api/runs/46/ HTTP/1.1" 200 3500
+[18/Mar/2026 17:15:33] "GET /api/runs/46/ HTTP/1.1" 200 3500
+[18/Mar/2026 17:18:04] "PATCH /api/runs/47/ HTTP/1.1" 200 3500
+[18/Mar/2026 17:18:05] "GET /api/runs/47/ HTTP/1.1" 200 3500
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+[19/Mar/2026 09:40:21] "GET /cgi-bin/webproc?getpage=/etc/shadow&errorpage=html
+/main.html&var:language=en_us&var:menu=setup&var:page=wizard HTTP/1.1" 400 
+61460
+Traceback (most recent call last):
+Traceback (most recent call last):
+Internal Server Error: /api/runs/
+Traceback (most recent call last):
+sqlite3.OperationalError: no such column: api_simulationrun.pitch
+Traceback (most recent call last):
+    with self.db.wrap_database_errors:
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+django.db.utils.OperationalError: no such column: api_simulationrun.pitch
+[19/Mar/2026 11:50:22] "GET /api/runs/ HTTP/1.1" 500 183288
+Internal Server Error: /api/runs/
+Traceback (most recent call last):
+sqlite3.OperationalError: no such column: api_simulationrun.pitch
+Traceback (most recent call last):
+    with self.db.wrap_database_errors:
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+django.db.utils.OperationalError: no such column: api_simulationrun.pitch
+[19/Mar/2026 11:50:22] "GET /api/runs/ HTTP/1.1" 500 183288
+[19/Mar/2026 15:01:49] "PATCH /api/runs/53/ HTTP/1.1" 200 1500
+
+

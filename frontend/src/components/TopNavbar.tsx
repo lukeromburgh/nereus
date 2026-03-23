@@ -68,8 +68,8 @@ export function TopNavbar({ onRefresh }: TopNavbarProps) {
 
   return (
     <div className="h-11 flex items-center justify-between px-4 border-b border-hud-border bg-surface-solid/90 backdrop-blur-hud">
-      {/* Brand */}
-      <div className="flex items-center gap-3">
+      {/* Brand + Nav */}
+      <div className="flex items-center gap-6">
         <div className="flex items-center gap-2">
           <Waves className="h-4 w-4 text-accent-cyan" />
           <span className="text-sm font-semibold tracking-wide text-slate-100 font-sans">
@@ -80,6 +80,21 @@ export function TopNavbar({ onRefresh }: TopNavbarProps) {
         <span className="text-2xs text-slate-500 font-sans tracking-wider uppercase">
           CFD Dashboard
         </span>
+        {/* Nav Tabs */}
+        <nav className="flex items-center gap-2 ml-6">
+          <a
+            href="/"
+            className="text-xs font-medium px-3 py-1.5 border-b-2 border-transparent text-slate-300 hover:text-accent-cyan hover:border-accent-cyan transition-colors duration-150"
+          >
+            Home
+          </a>
+          <a
+            href="/comparison"
+            className="text-xs font-medium px-3 py-1.5 border-b-2 border-transparent text-slate-300 hover:text-[#bef500] hover:border-[#bef500] transition-colors duration-150"
+          >
+            Run Comparison
+          </a>
+        </nav>
         {status !== "IDLE" && (
           <>
             <div className="h-4 w-px bg-slate-700/50" />
