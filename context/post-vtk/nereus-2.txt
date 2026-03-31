@@ -1,0 +1,152 @@
+# Nereus App Architecture and Current State (as of 25 March 2026)
+
+## Overview
+Nereus is a full-stack application for running, monitoring, and analyzing hydrodynamics simulations. It features a modern React frontend, a Django backend API, and a simulation worker, all orchestrated via Docker Compose. The system is designed for interactive 3D visualization, simulation management, and post-processing analysis.
+
+---
+
+## 1. Project Structure
+
+- **Root**
+  - `docker-compose.yml`: Orchestrates backend, worker, and possibly frontend services.
+  - `readme.md`, `prompt-guide.md`, `styles.md`, `vtk-js.md`: Documentation and guides.
+  - `api_errors.txt`, `api_logs.txt`, `api_logs_full.txt`: Log and error tracking.
+  - `nereus.txt`: (Purpose unclear, possibly legacy or notes.)
+
+- **backend/**
+  - Django project with API, database, and Celery integration.
+  - `api/`: Django app for simulation runs, models, serializers, tasks, and views.
+  - `nereus_core/`: Django project core (settings, URLs, WSGI/ASGI, Celery config).
+  - `media/assets/hydrofoils/`: Static/media assets for simulations.
+  - `db.sqlite3`: Local development database.
+
+- **frontend/**
+  - React + TypeScript app (Vite-based, Tailwind CSS, Framer Motion, VTK.js integration).
+  - `src/`: Main source code (components, hooks, lib, pages, store, styles, types).
+  - `public/`: Static assets.
+
+- **simulation_worker/**
+  - Python worker for running simulations, managed by Celery.
+  - `tasks.py`, `template_manager.py`: Simulation orchestration and template handling.
+
+- **tests/**
+  - Python and TypeScript tests for backend and frontend.
+
+---
+
+## 2. Frontend Architecture (React)
+
+- **Entry Point**: `frontend/src/App.tsx`
+  - Uses React functional components and hooks.
+  - State management via `useSimStore` (likely Zustand or similar).
+  - Layout: Three main panels (Sidebar, 3D Viewport, Config/Analysis Panel).
+  - Polling: Exponential backoff polling for simulation status.
+  - Analysis: Loads post-run analysis data when simulation completes.
+  - Animation: Framer Motion for smooth panel transitions.
+
+- **Key Components**:
+  - `Sidebar`: Asset management and run history.
+  - `TopNavbar`: Main navigation and refresh control.
+  - `VtkViewport`: 3D visualization (VTK.js integration).
+  - `ConfigPanel`: Simulation configuration and controls.
+  - `AnalysisPanel`: Post-processing and results display.
+  - `LogConsole`: Real-time log streaming.
+  - `LayerManager`, `MetricHUD`, `TimelineController`, etc.: Specialized UI for simulation control and analysis.
+
+- **Hooks & Store**:
+  - `useSimStore`: Centralized state for simulation status, active run, analysis data, etc.
+  - `useVtkPlayback`, `useVtkRenderer`, `useVtkScene`: Custom hooks for 3D scene management and playback.
+
+- **Styling**:
+  - Tailwind CSS for utility-first styling.
+  - Custom themes and design tokens in `lib/designTokens.ts`.
+
+- **API Integration**:
+  - Uses Axios for REST API calls to backend (`/api/runs/`, `/api/runs/:id/analysis/`).
+
+---
+
+## 3. Backend Architecture (Django)
+
+- **Core**:
+  - Django project with REST API (likely Django REST Framework).
+  - Models for simulation runs, assets, and results.
+  - Serializers for API data exchange.
+  - Views for CRUD and analysis endpoints.
+  - Celery for background task processing (simulation runs, post-processing).
+
+- **API Endpoints** (inferred):
+  - `/api/runs/`: List, create, and manage simulation runs.
+  - `/api/runs/<id>/`: Retrieve run status and details.
+  - `/api/runs/<id>/analysis/`: Fetch post-run analysis data.
+
+- **Database**:
+  - SQLite for development; production may use PostgreSQL or similar.
+
+- **Media/Assets**:
+  - Hydrofoil and other simulation assets stored in `media/assets/`.
+
+---
+
+## 4. Simulation Worker
+
+- **Purpose**: Executes simulation jobs, likely using OpenFOAM or similar CFD tools.
+- **Integration**: Communicates with backend via Celery and shared database.
+- **Files**:
+  - `tasks.py`: Defines simulation and post-processing tasks.
+  - `template_manager.py`: Handles simulation input templates.
+
+---
+
+## 5. Testing
+
+- **Backend**: Pytest-based tests for simulation logic and API endpoints.
+- **Frontend**: TypeScript tests for UI and scene transforms.
+
+---
+
+## 6. Current State & Observations
+
+- **Frontend**:
+  - Modern, modular, and well-structured React app.
+  - Real-time polling and analysis loading are implemented and robust.
+  - 3D visualization and analysis panels are integrated.
+  - Uses best practices for state management and UI composition.
+
+- **Backend**:
+  - Django API is structured for simulation management and analysis.
+  - Celery is set up for async/background processing.
+  - Migration history is present, indicating ongoing model evolution.
+
+- **Worker**:
+  - Dedicated simulation worker is present and integrated.
+
+- **DevOps**:
+  - Docker Compose for orchestration.
+  - Local development database and asset management.
+
+- **Documentation**:
+  - Multiple markdown files for architecture, styles, and guides.
+
+---
+
+## 7. Notable Strengths
+
+- Clear separation of concerns (frontend, backend, worker).
+- Modern frontend stack with 3D visualization.
+- Scalable backend with async processing.
+- Modular and maintainable codebase.
+
+---
+
+## 8. Potential Areas for Further Exploration
+
+- Production deployment configuration (DB, static/media, security).
+- CI/CD integration and automated testing.
+- Enhanced error/log management.
+- User authentication and permissions (not visible in current context).
+- Advanced analysis and visualization features.
+
+---
+
+*This document was generated automatically based on the current state of the codebase and may not capture all details. For deeper insights, see the code and documentation files in the repository.*

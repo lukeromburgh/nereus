@@ -22,6 +22,8 @@ import vtkArrowSource from "@kitware/vtk.js/Filters/Sources/ArrowSource";
 import vtkConeSource from "@kitware/vtk.js/Filters/Sources/ConeSource";
 import vtkTubeFilter from "@kitware/vtk.js/Filters/General/TubeFilter";
 import vtkDataArray from "@kitware/vtk.js/Common/Core/DataArray";
+import vtkPolyDataNormals from "@kitware/vtk.js/Filters/Core/PolyDataNormals";
+import vtkWindowedSincPolyDataFilter from "@kitware/vtk.js/Filters/General/WindowedSincPolyDataFilter";
 
 import type { VtkContext } from "./useVtkRenderer";
 import { useSimStore } from "../store/useSimStore";
@@ -55,22 +57,74 @@ async function fetchPolyData(url: string): Promise<any> {
   const arrayBuffer = await response.arrayBuffer();
 
   const clean = url.toLowerCase().replace(/\?.*$/, "");
-  if (clean.endsWith(".stl")) {
+  const isStl = clean.endsWith(".stl");
+
+  let polyData: any;
+
+  if (isStl) {
     const reader = vtkSTLReader.newInstance();
     reader.parseAsArrayBuffer(arrayBuffer);
-    const pd = reader.getOutputData(0);
-    if (!pd || pd.getNumberOfPoints() === 0)
+    polyData = reader.getOutputData(0);
+    if (!polyData || polyData.getNumberOfPoints() === 0)
       throw new Error("STLReader produced empty polydata");
-    return pd;
+
+    // ── Smooth geometry (Laplacian / windowed-sinc) ──────────────────
+    // Reduces staircase artifacts on coarse STL surfaces before normals
+    // are computed. passband=0.1 is a gentle low-pass; increase toward
+    // 1.0 for stronger smoothing (more deviation from original shape).
+    const smoother = vtkWindowedSincPolyDataFilter.newInstance();
+    smoother.setInputData(polyData);
+    smoother.setNumberOfIterations(20);
+    smoother.setPassBand(0.1);           // 0 = max smooth, 1 = no smooth
+    smoother.setBoundarySmoothing(false); // preserve sharp leading/trailing edges
+    smoother.setFeatureEdgeSmoothing(false);
+    smoother.setNonManifoldSmoothing(false);
+    smoother.update();
+    polyData = smoother.getOutputData();
+
+  } else {
+    // VTP (XML PolyData) — parse as-is; CFD solver output already has topology
+    const reader = vtkXMLPolyDataReader.newInstance();
+    reader.parseAsArrayBuffer(arrayBuffer);
+    polyData = reader.getOutputData(0);
+    if (!polyData || polyData.getNumberOfPoints() === 0)
+      throw new Error("XMLPolyDataReader produced empty polydata");
   }
 
-  // VTP (XML PolyData)
-  const reader = vtkXMLPolyDataReader.newInstance();
-  reader.parseAsArrayBuffer(arrayBuffer);
-  const pd = reader.getOutputData(0);
-  if (!pd || pd.getNumberOfPoints() === 0)
-    throw new Error("XMLPolyDataReader produced empty polydata");
-  return pd;
+  // ── Compute smooth per-vertex normals ──────────────────────────────
+  // This is the single biggest visual improvement: interpolated normals
+  // enable Phong shading to produce a smooth silhouette even on a coarse
+  // mesh. featureAngle=60° preserves hard edges (LE/TE) while smoothing
+  // the bulk surface. setSplitting(false) avoids duplicating vertices at
+  // sharp features, which keeps scalar arrays intact for pressure mapping.
+  const normals = vtkPolyDataNormals.newInstance();
+  normals.setInputData(polyData);
+  normals.setComputePointNormals(true);
+  normals.setComputeCellNormals(false);
+
+  if (typeof normals.setSplitting === "function") {
+    normals.setSplitting(false); // keep topology — scalars stay aligned
+  }
+  if (typeof normals.setFeatureAngle === "function") {
+    normals.setFeatureAngle(60); // degrees: below → smooth, above → crease
+  }
+  if (typeof normals.setConsistency === "function") {
+    normals.setConsistency(true); // fix flipped winding order
+  }
+  if (typeof normals.setAutoOrientNormals === "function") {
+    normals.setAutoOrientNormals(true); // ensure outward-facing normals
+  }
+  if (typeof normals.setNonManifoldTraversal === "function") {
+    normals.setNonManifoldTraversal(false);
+  }
+
+  normals.update();
+
+  const out = normals.getOutputData();
+  if (!out || out.getNumberOfPoints() === 0)
+    throw new Error("PolyDataNormals produced empty output");
+
+  return out;
 }
 
 /**
@@ -375,9 +429,8 @@ export function useVtkScene(
       removeActor("tailMarker");
 
       // ── Build mapper + actor ───────────────────────────────────────
-      const mapper = vtkMapper.newInstance({
-        interpolateScalarsBeforeMapping: true,
-      });
+      const mapper = vtkMapper.newInstance();
+mapper.setInterpolateScalarsBeforeMapping(true);
       mapper.setInputData(polyData);
       foilPolyRef.current = polyData;
 
@@ -585,7 +638,10 @@ export function useVtkScene(
         }
 
         const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
-        actor.setOrientation([p, y, r]);
+        actor.setOrientation(0, 0, 0);
+actor.rotateY(y);
+actor.rotateX(p);
+actor.rotateZ(r);
 
         removeActor("flowLines");
         actorsRef.current.flowLines = actor;
@@ -652,7 +708,10 @@ export function useVtkScene(
         }
 
         const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
-        actor.setOrientation([p, y, r]);
+        actor.setOrientation(0, 0, 0);
+actor.rotateY(y);
+actor.rotateX(p);
+actor.rotateZ(r);
 
         removeActor("pressureLines");
         actorsRef.current.pressureLines = actor;
@@ -677,78 +736,101 @@ export function useVtkScene(
   //  Uses the file_manifest from the store if available.
   // ────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const ctx = contextRef.current;
-    if (!ctx) return;
+  const ctx = contextRef.current;
+  if (!ctx) return;
 
-    if (!showVorticity && !showStreamlines) {
+  if (!showVorticity && !showStreamlines) {
+    removeActor("vorticity");
+    render();
+    return;
+  }
+
+  const simId = useSimStore.getState().activeSimId;
+  if (!simId) return;
+
+  const vtpUrl = showVorticity
+    ? `${baseUrl}/media/simulations/${simId}/q_criterion_isosurface.vtp`
+    : `${baseUrl}/media/simulations/${simId}/skin_friction_lines.vtp`;
+
+  (async () => {
+    try {
+      let polyData = await fetchPolyData(vtpUrl);
+
+      // ── 1. Compute smooth normals for the isosurface ──────────────
+      const normals = vtkPolyDataNormals.newInstance();
+      normals.setInputData(polyData);
+      normals.setComputePointNormals(true);
+      normals.setComputeCellNormals(false);
+      normals.update();
+      const normalsOutput = normals.getOutputData();
+
+      // Safety check - if normals failed, use original polyData
+      if (normalsOutput && normalsOutput.getNumberOfPoints?.() > 0) {
+        polyData = normalsOutput;
+      } else {
+        console.warn("[useVtkScene] PolyDataNormals produced empty output, using original data");
+      }
+
+      const mapper = vtkMapper.newInstance();
+      mapper.setInputData(polyData);
+
+      // Try multiple arrays for coloring: vorticity magnitude, Q-criterion, or vorticity_x
+      const pointData = polyData.getPointData?.();
+      const colorArr =
+        pointData?.getArrayByName?.("vorticity_mag") ??
+        pointData?.getArrayByName?.("Q_criterion") ??
+        pointData?.getArrayByName?.("vorticity_x") ??
+        pointData?.getArrayByName?.("Cf");
+
+      if (colorArr) {
+        const range = colorArr.getRange();
+        const cm = useSimStore.getState().colormap;
+        const lut = createVtkLookupTable(cm, [range[0], range[1]]);
+        mapper.setLookupTable(lut);
+        mapper.setScalarRange(range[0], range[1]);
+        mapper.setColorByArrayName(colorArr.getName());
+        mapper.setScalarModeToUsePointFieldData();
+        mapper.setScalarVisibility(true);
+      } else {
+        mapper.setScalarVisibility(false);
+      }
+
+      const actor = vtkActor.newInstance();
+      actor.setMapper(mapper);
+      const prop = actor.getProperty();
+      prop.setOpacity(showVorticity ? 0.45 : 0.7);
+      prop.setAmbient(0.2);
+      prop.setDiffuse(0.8);
+      prop.setSpecular(0.15);
+      prop.setSpecularPower(16);
+      prop.setInterpolationToPhong();
+      if (!colorArr) prop.setColor(0.5, 0.1, 0.9);
+
+      // ── 2. Apply orientation ───────────────────────────────────────
+      // Only apply orientation to asset previews, NOT simulation results.
+      // Simulation results are already oriented correctly from the backend.
+      const isSimulationResult = vtpUrl?.includes('/media/simulations/');
+      if (!isSimulationResult) {
+        const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
+        actor.setOrientation(0, 0, 0);
+        actor.rotateY(y);
+        actor.rotateX(p);
+        actor.rotateZ(r);
+      }
+
+      removeActor("vorticity");
+      actorsRef.current.vorticity = actor;
+      ctx.renderer.addActor(actor);
+      render();
+      console.info(`[useVtkScene] Vorticity/streamlines loaded: ${polyData.getNumberOfPoints()} pts`);
+    } catch (err) {
+      console.error("[useVtkScene] Failed to load vorticity/streamlines:", vtpUrl, err);
       removeActor("vorticity");
       render();
-      return;
     }
-
-    // Try to find Q-criterion isosurface or skin friction lines from file_manifest
-    // These come from the post-processing pipeline and are stored in the run data.
-    // For now, check if the run has a q_criterion_isosurface.vtp or skin_friction_lines.vtp
-    const simId = useSimStore.getState().activeSimId;
-    if (!simId) return;
-
-    const vtpUrl = showVorticity
-      ? `${baseUrl}/media/simulations/${simId}/q_criterion_isosurface.vtp`
-      : `${baseUrl}/media/simulations/${simId}/skin_friction_lines.vtp`;
-
-    (async () => {
-      try {
-        const polyData = await fetchPolyData(vtpUrl);
-
-        const mapper = vtkMapper.newInstance();
-        mapper.setInputData(polyData);
-
-        // Color by vorticity_x or Cf if present
-        const vortArr = polyData
-          .getPointData?.()
-          ?.getArrayByName?.("vorticity_x");
-        const cfArr = polyData.getPointData?.()?.getArrayByName?.("Cf");
-        const colorArr = vortArr ?? cfArr;
-
-        if (colorArr) {
-          const range = colorArr.getRange();
-          const cm = useSimStore.getState().colormap;
-          const lut = createVtkLookupTable(cm, [range[0], range[1]]);
-          mapper.setLookupTable(lut);
-          mapper.setScalarRange(range[0], range[1]);
-          mapper.setColorByArrayName(colorArr.getName());
-          mapper.setScalarModeToUsePointFieldData();
-        } else {
-          mapper.setScalarVisibility(false);
-        }
-
-        const actor = vtkActor.newInstance();
-        actor.setMapper(mapper);
-        actor.getProperty().setOpacity(showVorticity ? 0.5 : 0.7);
-        actor.getProperty().setAmbient(0.3);
-        actor.getProperty().setDiffuse(0.7);
-        if (!colorArr) {
-          actor.getProperty().setColor(0.5, 0.1, 0.9);
-        }
-
-        const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
-        actor.setOrientation([p, y, r]);
-
-        removeActor("vorticity");
-        actorsRef.current.vorticity = actor;
-        ctx.renderer.addActor(actor);
-        render();
-        console.info(
-          `[useVtkScene] Vorticity/streamlines loaded: ${polyData.getNumberOfPoints()} pts`,
-        );
-      } catch {
-        // VTP not available for this run — expected for older sims
-        removeActor("vorticity");
-        render();
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showVorticity, showStreamlines, activeSimId]);
+  })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [showVorticity, showStreamlines, activeSimId]);
 
   // ────────────────────────────────────────────────────────────────────────
   //  EFFECT 3: Update pressure colormap / toggle (no geometry reload)

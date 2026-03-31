@@ -71,7 +71,7 @@ export function TopNavbar({ onRefresh }: TopNavbarProps) {
       {/* Brand + Nav */}
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-2">
-          <Waves className="h-4 w-4 text-accent-cyan" />
+          <Waves className="h-4 w-4 text-accent-cyan animate-wave" />
           <span className="text-sm font-semibold tracking-wide text-slate-100 font-sans">
             NEREUS
           </span>

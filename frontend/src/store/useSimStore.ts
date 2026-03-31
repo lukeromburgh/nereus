@@ -120,6 +120,10 @@ interface SimulationState {
   setPayloadWeight: (val: number) => void;
   setCenterOfGravity: (val: [number, number, number]) => void;
 
+  // Advanced mode toggle
+  showAdvanced: boolean;
+  setShowAdvanced: (show: boolean) => void;
+
   // Orientation correction — values in degrees.
   // The backend (trimesh euler_matrix) expects degrees and converts internally.
   // VTK.js applies these directly via actor.setOrientation().
@@ -280,6 +284,10 @@ export const useSimStore = create<SimulationState>((set) => ({
   setMass: (val) => set({ mass: val }),
   setPayloadWeight: (val) => set({ payloadWeight: val }),
   setCenterOfGravity: (val) => set({ centerOfGravity: val }),
+
+  // Advanced mode toggle
+  showAdvanced: false,
+  setShowAdvanced: (show) => set({ showAdvanced: show }),
 
   // Orientation correction — degrees (sent as-is in the launch payload)
   pitch: 0,

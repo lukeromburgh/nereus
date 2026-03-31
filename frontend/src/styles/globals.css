@@ -206,3 +206,83 @@
     );
   }
 }
+
+/**
+ * Tailwind utilities for refined glass-panel styling.
+ *
+ * Add this to your globals.css or Tailwind config.
+ */
+
+/* Option 1: Add to globals.css */
+@layer components {
+  .glass-panel-refined {
+    border-radius: 0.75rem; /* rounded-lg */
+    border-width: 1px;      /* border */
+    border-style: solid;
+    border-color: rgba(51, 65, 85, 0.3); /* border-slate-700/30 */
+    background: rgba(2, 15, 32, 0.6);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  .hud-label {
+    font-size: 0.75rem; /* text-xs */
+    font-weight: 500;   /* font-medium */
+    color: #94a3b8;     /* text-slate-400 */
+  }
+
+  .hud-value {
+    font-family: var(--font-mono), monospace; /* font-mono */
+    font-variant-numeric: tabular-nums;       /* tabular-nums */
+    color: #f1f5f9;                          /* text-slate-100 */
+  }
+
+  .hud-unit {
+    font-size: 0.625rem; /* text-2xs */
+    color: #475569;      /* text-slate-600 */
+  }
+
+  .hud-border {
+    border-color: rgba(51, 65, 85, 0.2); /* border-slate-700/20 */
+  }
+}
+
+/* Option 2: If using Tailwind plugin system */
+/* In tailwind.config.ts, add to plugins: */
+/*
+function({ addComponents }) {
+  addComponents({
+    '.glass-panel-refined': {
+      borderRadius: 'var(--radius-lg)',
+      borderWidth: '1px',
+      borderColor: 'rgba(71, 85, 105, 0.3)',
+      backgroundColor: 'rgba(2, 15, 32, 0.6)',
+      backdropFilter: 'blur(12px)',
+      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+    },
+    '.hud-label': {
+      fontSize: '0.75rem',
+      fontWeight: '500',
+      color: 'rgba(148, 163, 184, 1)',
+    },
+    '.hud-value': {
+      fontFamily: 'monospace',
+      letterSpacing: '0.05em',
+      color: 'rgba(226, 232, 240, 1)',
+    },
+    '.hud-unit': {
+      fontSize: '0.625rem',
+      color: 'rgba(100, 116, 139, 1)',
+    },
+  });
+}
+*/
+
+/* Color tokens (verify these exist in your Tailwind config) */
+/* 
+  accent-emerald: #10b981
+  accent-rose:    #f43f5e
+  accent-amber:   #f59e0b
+  accent-cyan:    #06b6d4
+  accent-glow:    #0ea5e9
+*/

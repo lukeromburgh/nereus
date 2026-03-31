@@ -1,63 +1,18 @@
 import axios from "axios";
 import { motion } from "framer-motion";
 import { Settings, Zap, ChevronDown } from "lucide-react";
+import { toast } from "@/lib/toast";
 import { useSimStore } from "../store/useSimStore";
+import { ConfigSection } from "./ConfigSection";
+import { FieldWithHint } from "./FieldWithHint";
+import { SliderWithInput } from "./SliderWithInput";
 import { OrientationPanel } from "./OrientationPanel";
 import { OrientationWarningBanner } from "./OrientationWarningBanner";
 
-function SliderControl({
-  label,
-  value,
-  display,
-  min,
-  max,
-  step,
-  disabled,
-  unit,
-  onChange,
-  hint,
-}: {
-  label: string;
-  value: number;
-  display?: string;
-  min: number;
-  max: number;
-  step?: number;
-  disabled: boolean;
-  unit?: string;
-  onChange: (val: number) => void;
-  hint?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <label className="text-xs font-medium text-slate-400 font-sans">
-          {label}
-        </label>
-        <div className="flex items-baseline gap-1">
-          <span className="text-xs font-semibold text-accent-glow font-mono tabular-nums">
-            {display ?? value}
-          </span>
-          {unit && <span className="text-2xs text-slate-600">{unit}</span>}
-        </div>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        disabled={disabled}
-        className="slider-aerospace"
-      />
-      {hint && <div className="text-2xs text-slate-600">{hint}</div>}
-    </div>
-  );
-}
-
 export function ConfigPanel() {
   const {
+    showAdvanced,
+    setShowAdvanced,
     velocity,
     aoa,
     waterDensity,
@@ -113,8 +68,14 @@ export function ConfigPanel() {
         payload,
       );
       startNewSim(response.data.id);
+      const runId = response.data?.id != null ? String(response.data.id).slice(0, 6) : "unknown";
+      toast.success(`✓ Simulation started (ID: ${runId})`);
     } catch (error) {
       console.error("Failed to launch simulation", error);
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data as any)?.detail || error.message || "Failed to launch simulation"
+        : (error instanceof Error ? error.message : "Failed to launch simulation");
+      toast.error(message);
     }
   };
 
@@ -138,126 +99,109 @@ export function ConfigPanel() {
         </h2>
       </div>
 
-      {/* Parameters */}
-      <div className="glass-panel rounded-lg p-3 flex flex-col gap-4">
-        <span className="hud-label">Flow Parameters</span>
-
-        <SliderControl
+      <ConfigSection title="Flow Parameters" defaultOpen>
+        <FieldWithHint
           label="Velocity"
-          value={velocity}
-          min={1}
-          max={50}
-          disabled={isRunning}
-          unit="m/s"
-          onChange={setVelocity}
-        />
+          hint="Speed of water flow. Typical range: 5–15 m/s for small foils. Higher speeds increase drag quadratically."
+        >
+          <SliderWithInput
+            value={velocity}
+            min={1}
+            max={50}
+            step={0.1}
+            unit="m/s"
+            onChange={(v) => setVelocity(v)}
+            onLivePreview={(v) => {
+              /* TODO: connect to live preview system */
+            }}
+          />
+        </FieldWithHint>
 
-        <SliderControl
+        <FieldWithHint
           label="Angle of Attack"
-          value={aoa}
-          min={-15}
-          max={15}
-          disabled={isRunning}
-          unit="°"
-          onChange={setAoA}
-        />
+          hint="Angle between flow and chord line; small changes have big lift effects."
+        >
+          <SliderWithInput
+            value={aoa}
+            min={-15}
+            max={15}
+            step={0.5}
+            unit="°"
+            onChange={(v) => setAoA(v)}
+            onLivePreview={(v) => {
+              /* TODO: connect to live preview system */
+            }}
+          />
+        </FieldWithHint>
+      </ConfigSection>
 
-        <SliderControl
-          label="Water Density"
-          value={waterDensity}
-          min={900}
-          max={1200}
-          step={5}
-          disabled={isRunning}
-          unit="kg/m³"
-          onChange={setWaterDensity}
-        />
-
-        <SliderControl
-          label="Submersion Depth"
-          value={submersionDepth}
-          display={submersionDepth.toFixed(2)}
-          min={0}
-          max={5}
-          step={0.05}
-          disabled={isRunning}
-          unit="m"
-          onChange={setSubmersionDepth}
-          hint="Depth of foil center below surface"
-        />
-      </div>
-
-      <div className="glass-panel rounded-lg p-3 flex flex-col gap-4">
-        <span className="hud-label">Vehicle Config</span>
-
-        <SliderControl
-          label="Vehicle Mass"
-          value={mass}
-          min={10}
-          max={5000}
-          step={10}
-          disabled={isRunning}
-          unit="kg"
-          onChange={setMass}
-        />
-
-        <SliderControl
-          label="Payload Weight"
-          value={payloadWeight}
-          min={0}
-          max={2000}
-          step={5}
-          disabled={isRunning}
-          unit="kg"
-          onChange={setPayloadWeight}
-        />
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-slate-400 font-sans">
-            Center of Gravity (x, y, z)
-          </label>
-          <div className="grid grid-cols-3 gap-1.5">
-            {(["X", "Y", "Z"] as const).map((axis, i) => (
-              <div key={axis} className="flex flex-col gap-0.5">
-                <span className="text-2xs text-slate-600 text-center">
-                  {axis}
-                </span>
-                <input
-                  type="number"
-                  step={0.01}
-                  value={centerOfGravity[i]}
-                  onChange={(e) => {
-                    const next = [...centerOfGravity] as [
-                      number,
-                      number,
-                      number,
-                    ];
-                    next[i] = Number(e.target.value);
-                    setCenterOfGravity(next);
-                  }}
-                  disabled={isRunning}
-                  className="w-full rounded-md border border-hud-border bg-white/[0.03] px-2 py-1.5 text-xs text-slate-200 font-mono text-center focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/20 transition-colors"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="glass-panel rounded-lg p-3 flex flex-col gap-4">
-        <span className="hud-label">Mesh Settings</span>
-
-        <SliderControl
+      <ConfigSection title="Mesh Settings" defaultOpen>
+        <FieldWithHint
           label="Mesh Density"
-          value={meshDensity}
-          display={`${meshDensity.toFixed(2)}×`}
-          min={0.5}
-          max={2.0}
-          step={0.05}
-          disabled={isRunning}
-          onChange={setMeshDensity}
-          hint="Higher values refine the base mesh"
-        />
+          hint="Higher values refine the base mesh but increase simulation time."
+        >
+          <SliderWithInput
+            value={meshDensity}
+            min={0.5}
+            max={2.0}
+            step={0.05}
+            onChange={(v) => setMeshDensity(v)}
+            onLivePreview={(v) => {
+              /* TODO: connect to live mesh previews */
+            }}
+          />
+        </FieldWithHint>
+      </ConfigSection>
+
+      <ConfigSection
+        title="Advanced Configuration"
+        isAdvanced
+        defaultOpen={showAdvanced}
+      >
+        <div className="flex items-center justify-between pb-2">
+          <p className="text-xs text-slate-400">Advanced controls</p>
+          <button
+            type="button"
+            className="text-2xs text-accent-cyan hover:text-white"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+          >
+            {showAdvanced ? "Hide" : "Show"}
+          </button>
+        </div>
+
+        <FieldWithHint
+          label="Water Density"
+          hint="Water density (kg/m³). 1000 is typical for fresh water."
+        >
+          <SliderWithInput
+            value={waterDensity}
+            min={900}
+            max={1200}
+            step={5}
+            unit="kg/m³"
+            onChange={(v) => setWaterDensity(v)}
+            onLivePreview={(v) => {
+              /* TODO: integrate with preview engine */
+            }}
+          />
+        </FieldWithHint>
+
+        <FieldWithHint
+          label="Submersion Depth"
+          hint="Depth of foil center below surface."
+        >
+          <SliderWithInput
+            value={submersionDepth}
+            min={0}
+            max={5}
+            step={0.05}
+            unit="m"
+            onChange={(v) => setSubmersionDepth(v)}
+            onLivePreview={(v) => {
+              /* TODO: integrate with preview engine */
+            }}
+          />
+        </FieldWithHint>
 
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between">
@@ -282,7 +226,74 @@ export function ConfigPanel() {
             <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
           </div>
         </div>
-      </div>
+
+        <FieldWithHint
+          label="Vehicle Mass"
+          hint="Total mass of vehicle including payload."
+        >
+          <SliderWithInput
+            value={mass}
+            min={10}
+            max={5000}
+            step={10}
+            unit="kg"
+            onChange={(v) => setMass(v)}
+            onLivePreview={(v) => {
+              /* TODO: integrate with preview engine */
+            }}
+          />
+        </FieldWithHint>
+
+        <FieldWithHint
+          label="Payload Weight"
+          hint="Extra payload mass on the vehicle."
+        >
+          <SliderWithInput
+            value={payloadWeight}
+            min={0}
+            max={2000}
+            step={5}
+            unit="kg"
+            onChange={(v) => setPayloadWeight(v)}
+            onLivePreview={(v) => {
+              /* TODO: integrate with preview engine */
+            }}
+          />
+        </FieldWithHint>
+
+        <FieldWithHint
+          label="Center of Gravity"
+          hint="X,Y,Z coordinates for center of gravity (m)."
+        >
+          <div className="flex flex-col gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
+              {(["X", "Y", "Z"] as const).map((axis, i) => (
+                <div key={axis} className="flex flex-col gap-0.5">
+                  <span className="text-2xs text-slate-600 text-center">
+                    {axis}
+                  </span>
+                  <input
+                    type="number"
+                    step={0.01}
+                    value={centerOfGravity[i]}
+                    onChange={(e) => {
+                      const next = [...centerOfGravity] as [
+                        number,
+                        number,
+                        number,
+                      ];
+                      next[i] = Number(e.target.value);
+                      setCenterOfGravity(next);
+                    }}
+                    disabled={isRunning}
+                    className="w-full rounded-md border border-hud-border bg-white/[0.03] px-2 py-1.5 text-xs text-slate-200 font-mono text-center focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/20 transition-colors"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </FieldWithHint>
+      </ConfigSection>
 
       {/* Orientation correction */}
       <OrientationPanel />

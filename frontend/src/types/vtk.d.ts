@@ -124,6 +124,23 @@ declare module "@kitware/vtk.js/IO/Geometry/STLReader" {
   export default vtkSTLReader;
 }
 
+declare module "@kitware/vtk.js/Filters/Core/PolyDataNormals" {
+  const vtkPolyDataNormals: { newInstance(opts?: Record<string, any>): any };
+  export default vtkPolyDataNormals;
+}
+
+declare module "@kitware/vtk.js/Filters/General/WindowedSincPolyDataFilter" {
+  const vtkWindowedSincPolyDataFilter: {
+    newInstance(opts?: Record<string, any>): any;
+  };
+  export default vtkWindowedSincPolyDataFilter;
+}
+
+declare module "@kitware/vtk.js/Filters/General/ConnectivityFilter" {
+  const vtkConnectivityFilter: { newInstance(opts?: Record<string, any>): any };
+  export default vtkConnectivityFilter;
+}
+
 declare module "@kitware/vtk.js/Rendering/Misc/FullScreenRenderWindow" {
   const vtkFullScreenRenderWindow: {
     newInstance(opts?: Record<string, any>): any;

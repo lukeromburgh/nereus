@@ -1,9 +1,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath, URL } from "node:url";
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+    dedupe: ["react", "react-dom", "react-router", "react-router-dom"],
+  },
   optimizeDeps: {
     // Pre-bundle vtk.js sub-paths so CJS deps (globalthis, etc.) get
     // converted to ESM.  The Geometry profile registers all OpenGL view-node

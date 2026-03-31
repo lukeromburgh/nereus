@@ -7,44 +7,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useSimStore } from "../store/useSimStore";
-
-function OrientationSlider({
-  label,
-  value,
-  disabled,
-  onChange,
-  onCommit,
-}: {
-  label: string;
-  value: number;
-  disabled: boolean;
-  onChange: (val: number) => void;
-  onCommit: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-baseline justify-between">
-        <label className="text-xs font-medium text-slate-400 font-sans">
-          {label}
-        </label>
-        <span className="text-xs font-semibold text-accent-glow font-mono tabular-nums">
-          {value}°
-        </span>
-      </div>
-      <input
-        type="range"
-        min={-180}
-        max={180}
-        step={5}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        onPointerUp={onCommit}
-        disabled={disabled}
-        className="slider-aerospace"
-      />
-    </div>
-  );
-}
+import { FieldWithHint } from "./FieldWithHint";
+import { SliderWithInput } from "./SliderWithInput";
 
 export function OrientationPanel() {
   const {
@@ -120,27 +84,53 @@ export function OrientationPanel() {
       {!collapsed && (
         <div className="px-3 pb-3 flex flex-col gap-3">
           {/* Sliders */}
-          <OrientationSlider
+          <FieldWithHint
             label="Pitch (Rotate X)"
-            value={pitch}
-            disabled={isRunning}
-            onChange={setPitch}
-            onCommit={commitSlider}
-          />
-          <OrientationSlider
+            hint="Local rotation around the X axis."
+          >
+            <SliderWithInput
+              value={pitch}
+              min={-180}
+              max={180}
+              step={5}
+              unit="°"
+              onChange={(v) => setPitch(v)}
+              onLivePreview={(v) => setPitch(v)}
+              onRelease={commitSlider}
+            />
+          </FieldWithHint>
+
+          <FieldWithHint
             label="Roll (Rotate Y)"
-            value={roll}
-            disabled={isRunning}
-            onChange={setRoll}
-            onCommit={commitSlider}
-          />
-          <OrientationSlider
+            hint="Local rotation around the Y axis."
+          >
+            <SliderWithInput
+              value={roll}
+              min={-180}
+              max={180}
+              step={5}
+              unit="°"
+              onChange={(v) => setRoll(v)}
+              onLivePreview={(v) => setRoll(v)}
+              onRelease={commitSlider}
+            />
+          </FieldWithHint>
+
+          <FieldWithHint
             label="Yaw (Rotate Z)"
-            value={yaw}
-            disabled={isRunning}
-            onChange={setYaw}
-            onCommit={commitSlider}
-          />
+            hint="Local rotation around the Z axis."
+          >
+            <SliderWithInput
+              value={yaw}
+              min={-180}
+              max={180}
+              step={5}
+              unit="°"
+              onChange={(v) => setYaw(v)}
+              onLivePreview={(v) => setYaw(v)}
+              onRelease={commitSlider}
+            />
+          </FieldWithHint>
 
           {/* Quick-set buttons */}
           <div className="flex flex-wrap gap-1.5">

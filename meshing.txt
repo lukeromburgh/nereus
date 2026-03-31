@@ -1,3 +1,6 @@
+tasks.py
+
+
 from celery import Celery
 import subprocess
 import requests
@@ -1498,51 +1501,25 @@ def post_process(case_dir, sim_id, *, velocity, rho=1025.0, p_vapour=None):
     # ── 5. Q-CRITERION ISO-SURFACE ─────────────────────────────────────────
     try:
         if vol is not None and "Q_criterion" in vol.array_names:
-            # Q-criterion for tip vortices: use higher multiplier to capture only
-            # strong vortex cores. Values 10-50x (V/chord)^2 isolate tight spirals.
-            Q_threshold = 10.0 * (V / chord_length) ** 2
+            Q_threshold = 0.1 * (V / chord_length) ** 2
             iso = vol.contour(isosurfaces=[Q_threshold], scalars="Q_criterion")
-
-            # Adaptive threshold: try lower if empty, higher if too dense
             if iso is None or iso.n_points == 0:
-                Q_threshold *= 0.25
-                iso = vol.contour(isosurfaces=[Q_threshold], scalars="Q_criterion")
-            elif iso.n_points > 50000:
-                Q_threshold *= 3.0
+                # Halve threshold and retry once
+                Q_threshold *= 0.5
                 iso = vol.contour(isosurfaces=[Q_threshold], scalars="Q_criterion")
 
             if iso is not None and iso.n_points > 0:
-                # Sample volume fields onto isosurface for coloring
-                if "vorticity_mag" in vol.array_names or "vorticity_x" in vol.array_names:
+                if "vorticity_x" in vol.array_names:
                     iso = iso.sample(vol)
-
-                # Clip to wake region: only keep geometry downstream of trailing edge
-                if foil_bbox is not None:
-                    te_x = foil_bbox["x_max"]
-                    chord = foil_bbox["x_max"] - foil_bbox["x_min"]
-                    # Keep only points x > trailing_edge (wake region)
-                    iso = iso.clip_box(
-                        bounds=[
-                            te_x, te_x + 5 * chord,  # x: wake region (0-5 chords downstream)
-                            foil_bbox["y_min"] - chord, foil_bbox["y_max"] + chord,  # y: spanwise
-                            foil_bbox["z_min"] - 2 * chord, foil_bbox["z_max"] + 2 * chord,  # z: depth
-                        ],
-                        invert=False,
-                    )
-                    logger.info(f"Clipped isosurface to wake region (x > {te_x:.3f})")
-
-                if iso is not None and iso.n_points > 0:
-                    iso_path = out_dir / "q_criterion_isosurface.vtp"
-                    iso.save(str(iso_path))
-                    file_manifest["q_criterion_isosurface"] = (
-                        f"/media/simulations/{sim_id}/q_criterion_isosurface.vtp"
-                    )
-                    results["Q_threshold"] = Q_threshold
-                    logger.info(f"Exported q_criterion_isosurface.vtp (Q={Q_threshold:.4g}, {iso.n_points} pts)")
-                else:
-                    logger.warning("Q-criterion isosurface empty after wake clipping")
+                iso_path = out_dir / "q_criterion_isosurface.vtp"
+                iso.save(str(iso_path))
+                file_manifest["q_criterion_isosurface"] = (
+                    f"/media/simulations/{sim_id}/q_criterion_isosurface.vtp"
+                )
+                results["Q_threshold"] = Q_threshold
+                logger.info(f"Exported q_criterion_isosurface.vtp (Q={Q_threshold:.4g})")
             else:
-                logger.warning("Q-criterion iso-surface empty after threshold adjustment")
+                logger.warning("Q-criterion iso-surface empty after retry")
     except Exception as e:
         logger.warning(f"Section 5 (Q iso-surface) failed: {e}")
 
@@ -2588,3 +2565,892 @@ def run_hydro_simulation(self, sim_id):
         logger.error(f"Error processing Simulation {sim_id}: {e}")
         patch_django_status(sim_id, "FAILED", error_log=str(e))
         raise e
+
+
+----------
+
+template_manager.py
+
+import os
+from jinja2 import Template
+import logging
+
+logger = logging.getLogger(__name__)
+
+U_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class volVectorField; object U; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 1 -1 0 0 0 0];
+internalField   uniform ({{ ux }} 0 {{ uz }});
+
+boundaryField {
+    inlet {
+        type            fixedValue;
+        value           uniform ({{ ux }} 0 {{ uz }});
+    }
+    outlet {
+        type            zeroGradient;
+    }
+    foil {
+        type            noSlip; // Water "sticks" to the foil surface
+    }
+    walls {
+        type            noSlip;
+    }
+}"""
+
+P_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class volScalarField; object p; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform 0;
+
+boundaryField {
+    inlet {
+        type            zeroGradient;
+    }
+    outlet {
+        type            fixedValue;
+        value           uniform 0;
+    }
+    foil {
+        type            zeroGradient;
+    }
+    walls {
+        type            zeroGradient;
+    }
+}"""
+
+BLOCK_MESH_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class dictionary; location "system"; object blockMeshDict; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+convertToMeters 1;
+
+vertices
+(
+    ({{ x_min }} {{ y_min }} {{ z_min }})
+    ({{ x_max }} {{ y_min }} {{ z_min }})
+    ({{ x_max }} {{ y_max }} {{ z_min }})
+    ({{ x_min }} {{ y_max }} {{ z_min }})
+    ({{ x_min }} {{ y_min }} {{ z_max }})
+    ({{ x_max }} {{ y_min }} {{ z_max }})
+    ({{ x_max }} {{ y_max }} {{ z_max }})
+    ({{ x_min }} {{ y_max }} {{ z_max }})
+);
+
+blocks
+(
+    hex (0 1 2 3 4 5 6 7) ({{ nx }} {{ ny }} {{ nz }}) simpleGrading (1 1 1)
+);
+
+edges
+(
+);
+
+boundary
+(
+    inlet
+    {
+        type patch;
+        faces
+        (
+            (0 4 7 3)
+        );
+    }
+    outlet
+    {
+        type patch;
+        faces
+        (
+            (1 2 6 5)
+        );
+    }
+    walls
+    {
+        type wall;
+        faces
+        (
+            (0 1 5 4)
+            (3 7 6 2)
+            (0 3 2 1)
+            (4 5 6 7)
+        );
+    }
+);
+
+mergePatchPairs
+(
+);
+"""
+
+CONTROL_DICT_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class dictionary; location "system"; object controlDict; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+application     simpleFoam;
+startFrom       startTime;
+startTime       0;
+stopAt          endTime;
+endTime         {{ max_iterations }}; // Usually 500 for steady-state MVP
+deltaT          1;
+writeControl    runTime;
+writeInterval   {{ write_interval }}; // Save every X steps for the UI to update
+purgeWrite      20; // Keep enough frames for the 10-frame playback HUD
+writeFormat     binary;
+writePrecision  6;
+
+functions
+{
+    // Force telemetry for the Temporal Analysis HUD (Lift/Drag)
+    forces
+    {
+        type            forces;
+        libs            ("libforces.so");
+        patches         (foil);
+
+        // Incompressible: provide constant rho
+        rho             rhoInf;
+        rhoInf          {{ water_density }};
+
+        // Center of rotation from user-defined center of gravity
+        CofR            ({{ cofr_x }} {{ cofr_y }} {{ cofr_z }});
+
+        writeControl    runTime;
+        writeInterval   1;
+        log             yes;
+    }
+
+    yPlus
+    {
+        type            yPlus;
+        libs            ("libfieldFunctionObjects.so");
+        patches         (foil);
+        writeControl    writeTime;
+        log             yes;
+    }
+
+    wallShearStress
+    {
+        type            wallShearStress;
+        libs            ("libfieldFunctionObjects.so");
+        patches         (foil);
+        writeControl    writeTime;
+        log             yes;
+    }
+}
+"""
+
+FV_SCHEMES_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class dictionary; location "system"; object fvSchemes; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+ddtSchemes
+{
+    default         steadyState;
+}
+
+gradSchemes
+{
+    default         Gauss linear;
+    grad(U)         cellLimited Gauss linear 1;
+    grad(k)         cellLimited Gauss linear 1;
+    grad(omega)     cellLimited Gauss linear 1;
+}
+
+divSchemes
+{
+    default         none;
+    div(phi,U)      bounded Gauss linearUpwind grad(U);
+    div(phi,k)      bounded Gauss upwind;
+    div(phi,omega)  bounded Gauss upwind;
+    div((nuEff*dev2(T(grad(U))))) Gauss linear;
+}
+
+laplacianSchemes
+{
+    default         Gauss linear corrected;
+}
+
+interpolationSchemes
+{
+    default         linear;
+}
+
+snGradSchemes
+{
+    default         corrected;
+}
+
+wallDist
+{
+    method          meshWave;
+}
+"""
+
+FV_SOLUTION_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class dictionary; location "system"; object fvSolution; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+solvers
+{
+    p
+    {
+        solver          GAMG;
+        tolerance       1e-7;
+        relTol          0.1;
+        smoother        GaussSeidel;
+        nPreSweeps      0;
+        nPostSweeps     2;
+        cacheAgglomeration true;
+        agglomerator    faceAreaPair;
+        nCellsInCoarsestLevel 10;
+        mergeLevels     1;
+    }
+
+    U
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-8;
+        relTol          0.1;
+    }
+
+    k
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-8;
+        relTol          0.1;
+    }
+
+    omega
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-8;
+        relTol          0.1;
+    }
+}
+
+SIMPLE
+{
+    nNonOrthogonalCorrectors 1;
+
+    residualControl
+    {
+        p               1e-4;
+        U               1e-5;
+        k               1e-4;
+        omega           1e-4;
+    }
+}
+
+relaxationFactors
+{
+    fields
+    {
+        p               0.3;
+    }
+    equations
+    {
+        U               0.7;
+        k               0.5;
+        omega           0.5;
+    }
+}
+"""
+
+TRANSPORT_PROPERTIES_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class dictionary; location "constant"; object transportProperties; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+transportModel  Newtonian;
+
+nu              [0 2 -1 0 0 0 0] {{ nu }};
+"""
+
+TURBULENCE_PROPERTIES_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class dictionary; location "constant"; object turbulenceProperties; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+simulationType  RAS;
+
+RAS
+{
+    RASModel        kOmegaSST;
+    turbulence      on;
+    printCoeffs     on;
+}
+"""
+
+K_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class volScalarField; object k; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform {{ k }};
+
+boundaryField {
+    inlet {
+        type            fixedValue;
+        value           uniform {{ k }};
+    }
+    outlet {
+        type            zeroGradient;
+    }
+    foil {
+        type            kqRWallFunction;
+        value           uniform {{ k }};
+    }
+    walls {
+        type            kqRWallFunction;
+        value           uniform {{ k }};
+    }
+}"""
+
+OMEGA_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class volScalarField; object omega; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 0 -1 0 0 0 0];
+internalField   uniform {{ omega }};
+
+boundaryField {
+    inlet {
+        type            fixedValue;
+        value           uniform {{ omega }};
+    }
+    outlet {
+        type            zeroGradient;
+    }
+    foil {
+        type            omegaWallFunction;
+        value           uniform {{ omega }};
+    }
+    walls {
+        type            omegaWallFunction;
+        value           uniform {{ omega }};
+    }
+}"""
+
+NUT_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class volScalarField; object nut; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 2 -1 0 0 0 0];
+internalField   uniform {{ nut }};
+
+boundaryField {
+    inlet {
+        type            calculated;
+        value           uniform {{ nut }};
+    }
+    outlet {
+        type            calculated;
+        value           uniform 0;
+    }
+    foil {
+        type            nutkWallFunction;
+        value           uniform 0;
+    }
+    walls {
+        type            nutkWallFunction;
+        value           uniform 0;
+    }
+}"""
+
+SHM_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class dictionary; object snappyHexMeshDict; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+castellatedMesh true;
+snap            true;
+addLayers       {{ enable_layers | lower }};
+
+geometry {
+    foil.stl {
+        type triSurfaceMesh;
+        name foil;
+    }
+}
+
+castellatedMeshControls {
+    maxLocalCells 1000000;
+    maxGlobalCells 2000000;
+    minRefinementCells 0;
+    nCellsBetweenLevels 1;
+    resolveFeatureAngle 30;
+    allowFreeStandingZoneFaces true;
+
+    features
+    (
+        {% if eMesh_available %}{ file "foil.eMesh"; level {{ feature_level }}; }{% endif %}
+    );
+
+    refinementSurfaces {
+        foil {
+            level (3 4); // Min/Max refinement level
+        }
+    }
+    
+    // CRITICAL: Tells OpenFOAM where the "Water" is.
+    // Must be a point OUTSIDE the foil but INSIDE the bounding box.
+    locationInMesh ({{ loc_x }} {{ loc_y }} {{ loc_z }}); 
+}
+
+snapControls {
+    nSmoothPatch 3;
+    tolerance 2.0;
+    nSolveIter 30;
+    nRelaxIter 5;
+}
+
+{% if enable_layers %}
+addLayersControls
+{
+    relativeSizes       false;
+    expansionRatio      {{ layer_expansion }};
+    firstLayerThickness {{ first_layer_thickness }};
+    minThickness        {{ first_layer_thickness * 0.1 }};
+    nGrow               0;
+    featureAngle        60;
+    nRelaxIter          5;
+    nSmoothSurfaceNormals 1;
+    nSmoothNormals      3;
+    nSmoothThickness    10;
+    maxFaceThicknessRatio 0.5;
+    maxThicknessToMedialRatio 0.3;
+    minMedianAxisAngle  90;
+    nBufferCellsNoExtrude 0;
+    nLayerIter          50;
+
+    layers
+    {
+        foil
+        {
+            nSurfaceLayers  {{ n_surface_layers }};
+        }
+    }
+}
+{% endif %}
+
+meshQualityControls
+{
+    maxNonOrtho         65;
+    maxBoundarySkewness 20;
+    maxInternalSkewness 4;
+    maxConcave          80;
+    minVol              1e-13;
+    minTetQuality       1e-9;
+    minArea             -1;
+    minTwist            0.02;
+    minDeterminant      0.001;
+    minFaceWeight       0.02;
+    minVolRatio         0.01;
+    minTriangleTwist    -1;
+    nSmoothScale        4;
+    errorReduction      0.75;
+
+    relaxed
+    {
+        maxNonOrtho     75;
+    }
+}
+
+mergeTolerance 1e-6;
+"""
+
+G_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class uniformDimensionedVectorField;
+           object g; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 1 -2 0 0 0 0];
+value           (0 0 -9.81);
+"""
+
+P_RGH_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class volScalarField; object p_rgh; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform 0;
+
+boundaryField {
+    inlet {
+        type            fixedFluxPressure;
+        gradient        uniform 0;
+        value           uniform 0;
+    }
+    outlet {
+        type            fixedValue;
+        value           uniform 0;
+    }
+    foil {
+        type            fixedFluxPressure;
+        gradient        uniform 0;
+        value           uniform 0;
+    }
+    walls {
+        type            fixedFluxPressure;
+        gradient        uniform 0;
+        value           uniform 0;
+    }
+}
+"""
+
+SURFACE_FEATURE_EXTRACT_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
+FoamFile { version 2.0; format ascii; class dictionary;
+           object surfaceFeatureExtractDict; }
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+foil.stl
+{
+    extractionMethod    extractFromSurface;
+
+    extractFromSurfaceCoeffs
+    {
+        includedAngle   150;
+    }
+
+    writeObj            yes;
+}
+"""
+
+class TemplateManager:
+    """
+    Manages the generation of OpenFOAM dictionary files (controlDict, U, p, etc.)
+    using Jinja2 templates based on variables from the user UI payload.
+    """
+    def __init__(self, case_dir):
+        self.case_dir = case_dir
+        # Ensure base directories exist
+        os.makedirs(os.path.join(self.case_dir, "0"), exist_ok=True)
+        os.makedirs(os.path.join(self.case_dir, "system"), exist_ok=True)
+        os.makedirs(os.path.join(self.case_dir, "constant"), exist_ok=True)
+        os.makedirs(os.path.join(self.case_dir, "constant", "triSurface"), exist_ok=True)
+
+    def write_file(self, relative_path, template_str, context):
+        """Renders a template string with context and writes it to the case directory."""
+        template = Template(template_str)
+        rendered = template.render(**context)
+        file_path = os.path.join(self.case_dir, relative_path)
+        with open(file_path, "w") as f:
+            f.write(rendered)
+        logger.info(f"Generated {relative_path}")
+
+    def initialize_case(
+        self,
+        velocity,
+        water_density,
+        location_in_mesh=(0.5, 0.5, 0.5),
+        max_iterations=1000,
+        write_interval=50,
+        domain=None,
+        mesh_cells=None,
+        nu=1e-6,
+        angle_of_attack=0.0,
+        center_of_gravity=(0, 0, 0),
+        enable_layers=True,
+        n_surface_layers=5,
+        layer_expansion=1.2,
+        first_layer_thickness=1e-4,
+        feature_level=4,
+        enable_gravity=True,
+    ):
+        """
+        Generates the initialized OpenFOAM dict structures based on user inputs.
+        """
+        import math
+
+        aoa_rad = math.radians(float(angle_of_attack))
+        u_mag = max(abs(float(velocity)), 0.01)
+        ux = u_mag * math.cos(aoa_rad)
+        uz = -u_mag * math.sin(aoa_rad)  # negative: positive AoA tilts flow downward
+
+        logger.info(
+            f"Writing Configuration Dicts for Case: Velocity={velocity}, AoA={angle_of_attack}°, "
+            f"Ux={ux:.4f}, Uz={uz:.4f}, Density={water_density}"
+        )
+        
+        # 1. Write the Velocity (U) dict with AoA-decomposed components
+        self.write_file("0/U", U_TEMPLATE, {"ux": f"{ux:.6g}", "uz": f"{uz:.6g}"})
+        
+        # 2. Write the Pressure dict — p_rgh when gravity is on, plain p otherwise
+        if enable_gravity:
+            self.write_file("0/p_rgh", P_RGH_TEMPLATE, {})
+            self.write_file("0/p", P_TEMPLATE, {})
+            self.write_file("constant/g", G_TEMPLATE, {})
+        else:
+            self.write_file("0/p", P_TEMPLATE, {})
+
+        # 3. Turbulence BCs (k-omega SST)
+        # Compute inlet turbulence quantities from freestream velocity.
+        # TI = 5% turbulence intensity (typical for external water flows)
+        # L_turb = 0.07 * L_ref; use a conservative reference length of 0.1m
+        ti = 0.05
+        l_ref = 0.1
+        k_val = 1.5 * (ti * u_mag) ** 2
+        omega_val = math.sqrt(k_val) / (0.09 ** 0.25 * 0.07 * l_ref)
+        nut_val = k_val / max(omega_val, 1e-10)
+
+        self.write_file("0/k", K_TEMPLATE, {"k": f"{k_val:.6g}"})
+        self.write_file("0/omega", OMEGA_TEMPLATE, {"omega": f"{omega_val:.6g}"})
+        self.write_file("0/nut", NUT_TEMPLATE, {"nut": f"{nut_val:.6g}"})
+        
+        # 4. Write the controlDict (The simulation brain)
+        cofr = center_of_gravity if center_of_gravity else (0, 0, 0)
+        self.write_file(
+            "system/controlDict",
+            CONTROL_DICT_TEMPLATE,
+            {
+                "max_iterations": max_iterations,
+                "write_interval": write_interval,
+                "water_density": water_density,
+                "cofr_x": cofr[0],
+                "cofr_y": cofr[1],
+                "cofr_z": cofr[2],
+            },
+        )
+
+        # 3.1 Minimal solver numerics/config required by OpenFOAM
+        self.write_file("system/fvSchemes", FV_SCHEMES_TEMPLATE, {})
+        self.write_file("system/fvSolution", FV_SOLUTION_TEMPLATE, {})
+        self.write_file("constant/transportProperties", TRANSPORT_PROPERTIES_TEMPLATE, {"nu": nu})
+        self.write_file("constant/turbulenceProperties", TURBULENCE_PROPERTIES_TEMPLATE, {})
+        
+        # 4. Write the surfaceFeatureExtractDict (edge refinement)
+        self.write_file("system/surfaceFeatureExtractDict", SURFACE_FEATURE_EXTRACT_TEMPLATE, {})
+
+        # 5. Write the snappyHexMeshDict (mesh shrink-wrap + layers + feature edges)
+        self.write_file("system/snappyHexMeshDict", SHM_TEMPLATE, {
+            "loc_x": location_in_mesh[0],
+            "loc_y": location_in_mesh[1],
+            "loc_z": location_in_mesh[2],
+            "enable_layers": enable_layers,
+            "n_surface_layers": n_surface_layers,
+            "layer_expansion": layer_expansion,
+            "first_layer_thickness": first_layer_thickness,
+            "feature_level": feature_level,
+            "eMesh_available": False,  # updated to True after surfaceFeatureExtract succeeds
+        })
+
+        # 5. Write the blockMeshDict (Base mesh required by snappyHexMesh)
+        domain = domain or {
+            "x_min": -5.0,
+            "x_max": 15.0,
+            "y_min": -2.0,
+            "y_max": 2.0,
+            "z_min": -2.0,
+            "z_max": 2.0,
+        }
+        mesh_cells = mesh_cells or {"nx": 40, "ny": 20, "nz": 20}
+
+        self.write_file(
+            "system/blockMeshDict",
+            BLOCK_MESH_TEMPLATE,
+            {
+                **domain,
+                **mesh_cells,
+            },
+        )
+
+
+-----------------------
+
+models.py
+
+from django.db import models
+
+class Project(models.Model):
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+class HydrofoilAsset(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='assets')
+    name = models.CharField(max_length=255)
+    file = models.FileField(upload_to='assets/hydrofoils/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+class SimulationRun(models.Model):
+    class StatusChoices(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        MESHING = 'MESHING', 'Meshing'
+        RUNNING = 'RUNNING', 'Running'
+        COMPLETED = 'COMPLETED', 'Completed'
+        FAILED = 'FAILED', 'Failed'
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='simulation_runs')
+    asset = models.ForeignKey(HydrofoilAsset, on_delete=models.CASCADE, related_name='simulation_runs', null=True, blank=True)
+
+    # Vehicle Config
+    mass = models.FloatField(help_text="Mass of the vehicle in kg")
+    payload_weight = models.FloatField(help_text="Payload weight in kg")
+    center_of_gravity = models.JSONField(help_text="Center of gravity as an array [x, y, z]", default=list)
+
+    # Operating Conditions
+    velocity = models.FloatField(help_text="Velocity in m/s")
+    angle_of_attack = models.FloatField(help_text="Angle of attack in degrees")
+
+    # Environment
+    water_density = models.FloatField(default=1025.0, help_text="Water density in kg/m^3 (default 1025 for seawater)")
+    wave_height = models.FloatField(help_text="Wave height in meters")
+    submersion_depth = models.FloatField(
+        default=0.5,
+        help_text="Depth of the foil center below the water surface in meters",
+    )
+
+    # Physics
+    enable_gravity = models.BooleanField(
+        default=True,
+        help_text="Enable gravity and use p_rgh pressure formulation",
+    )
+
+    # Meshing
+    mesh_density = models.FloatField(
+        default=1.0,
+        help_text="Dimensionless base-mesh density multiplier (higher = finer base mesh)",
+    )
+    enable_layers = models.BooleanField(
+        default=True,
+        help_text="Enable boundary layer addition in snappyHexMesh",
+    )
+    n_surface_layers = models.IntegerField(
+        default=5,
+        help_text="Number of boundary layers on the foil surface",
+    )
+    layer_expansion = models.FloatField(
+        default=1.2,
+        help_text="Expansion ratio between successive boundary layers",
+    )
+    feature_level = models.IntegerField(
+        default=4,
+        help_text="Refinement level for feature edges extracted by surfaceFeatureExtract",
+    )
+
+    # Orientation correction (user-supplied, degrees)
+    pitch = models.FloatField(
+        default=0.0,
+        help_text="Pitch angle in degrees (rotation about Y axis)",
+    )
+    roll = models.FloatField(
+        default=0.0,
+        help_text="Roll angle in degrees (rotation about X axis)",
+    )
+    yaw = models.FloatField(
+        default=0.0,
+        help_text="Yaw angle in degrees (rotation about Z axis)",
+    )
+
+    # Orientation preview
+    orientation_preview_url = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text="Relative media URL of the orientation preview GLB",
+    )
+    geometry_dimensions = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Bounding-box dimensions after normalisation {chord_m, span_m, thickness_m}",
+    )
+
+    # Diagnostic: which original OBB axis was mapped to X/Y/Z
+    geometry_axes_detected = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="OBB axis mapping detected during STL orientation normalisation",
+    )
+
+    # Post-processing / slicing
+    slice_axis = models.CharField(
+        max_length=1,
+        choices=[('x', 'X'), ('y', 'Y'), ('z', 'Z')],
+        default='y',
+        help_text="Axis normal for the exported analysis slice (x/y/z)",
+    )
+
+    # Status
+    status = models.CharField(
+        max_length=20,
+        choices=StatusChoices.choices,
+        default=StatusChoices.PENDING
+    )
+    
+    current_logs = models.TextField(blank=True, null=True, help_text="Last 5 lines of solver output")
+    result_mesh_path = models.CharField(max_length=512, blank=True, null=True, help_text="Path to the reduced GLTF result")
+
+    # Temporal results ("Temporal Geometry Pipeline")
+    # `frame_mapping` is the authoritative sync-map between frame_index -> iteration/time -> metrics.
+    result_sequence_path = models.CharField(
+        max_length=512,
+        blank=True,
+        null=True,
+        help_text="Path to the temporal results manifest (JSON) for playback",
+    )
+    frame_mapping = models.JSONField(
+        default=list,
+        help_text="List of per-frame mappings with URLs and metrics (frame_index -> iteration/time -> metrics)",
+    )
+    metrics_series = models.JSONField(
+        default=list,
+        help_text="Per-frame metrics time-series aligned with frame_index for synchronized charts",
+    )
+    convergence_series = models.JSONField(
+        default=list,
+        help_text="Residual/convergence series for the convergence plot",
+    )
+
+    # Wall y+ results from post-processing
+    wall_yplus_max = models.FloatField(
+        null=True, blank=True,
+        help_text="Maximum wall y+ on foil surface",
+    )
+    wall_yplus_mean = models.FloatField(
+        null=True, blank=True,
+        help_text="Mean wall y+ on foil surface",
+    )
+
+    # Moment results from post-processing
+    pitch_moment = models.FloatField(
+        null=True, blank=True,
+        help_text="Pitch moment (My) averaged over last 20% of iterations, N·m",
+    )
+    roll_moment = models.FloatField(
+        null=True, blank=True,
+        help_text="Roll moment (Mx) averaged over last 20% of iterations, N·m",
+    )
+    yaw_moment = models.FloatField(
+        null=True, blank=True,
+        help_text="Yaw moment (Mz) averaged over last 20% of iterations, N·m",
+    )
+
+    # Scalar results from post-processing pipeline
+    cl = models.FloatField(null=True, blank=True)
+    cd = models.FloatField(null=True, blank=True)
+    l_d_ratio = models.FloatField(null=True, blank=True)
+    cm_pitch = models.FloatField(null=True, blank=True)
+    cavitation_risk = models.BooleanField(null=True, blank=True)
+    sigma = models.FloatField(null=True, blank=True)
+    cavitation_onset_x_over_c = models.FloatField(null=True, blank=True)
+    cavitating_surface_fraction = models.FloatField(null=True, blank=True)
+    vortex_decay_rate = models.FloatField(null=True, blank=True)
+    omega_0 = models.FloatField(null=True, blank=True)
+    x_over_c_10pct_decay = models.FloatField(null=True, blank=True)
+    file_manifest = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"SimulationRun {self.id} for Project {self.project.name} - {self.status}"
