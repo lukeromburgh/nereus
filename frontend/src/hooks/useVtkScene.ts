@@ -757,30 +757,26 @@ actor.rotateZ(r);
       let polyData = await fetchPolyData(vtpUrl);
 
       // ── 1. Compute smooth normals for the isosurface ──────────────
+      // featureAngle=30 is more aggressive than the foil (60°) because
+      // Q-criterion isosurfaces have no meaningful sharp features —
+      // we want maximum smoothness across the whole surface.
       const normals = vtkPolyDataNormals.newInstance();
       normals.setInputData(polyData);
       normals.setComputePointNormals(true);
       normals.setComputeCellNormals(false);
+      normals.setSplitting(false);
+      normals.setFeatureAngle(30);
+      normals.setConsistency(true);
+      normals.setAutoOrientNormals(true);
       normals.update();
-      const normalsOutput = normals.getOutputData();
-
-      // Safety check - if normals failed, use original polyData
-      if (normalsOutput && normalsOutput.getNumberOfPoints?.() > 0) {
-        polyData = normalsOutput;
-      } else {
-        console.warn("[useVtkScene] PolyDataNormals produced empty output, using original data");
-      }
+      polyData = normals.getOutputData();
 
       const mapper = vtkMapper.newInstance();
       mapper.setInputData(polyData);
 
-      // Try multiple arrays for coloring: vorticity magnitude, Q-criterion, or vorticity_x
-      const pointData = polyData.getPointData?.();
-      const colorArr =
-        pointData?.getArrayByName?.("vorticity_mag") ??
-        pointData?.getArrayByName?.("Q_criterion") ??
-        pointData?.getArrayByName?.("vorticity_x") ??
-        pointData?.getArrayByName?.("Cf");
+      const vortArr = polyData.getPointData?.()?.getArrayByName?.("vorticity_x");
+      const cfArr   = polyData.getPointData?.()?.getArrayByName?.("Cf");
+      const colorArr = vortArr ?? cfArr;
 
       if (colorArr) {
         const range = colorArr.getRange();
@@ -807,16 +803,11 @@ actor.rotateZ(r);
       if (!colorArr) prop.setColor(0.5, 0.1, 0.9);
 
       // ── 2. Apply orientation ───────────────────────────────────────
-      // Only apply orientation to asset previews, NOT simulation results.
-      // Simulation results are already oriented correctly from the backend.
-      const isSimulationResult = vtpUrl?.includes('/media/simulations/');
-      if (!isSimulationResult) {
-        const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
-        actor.setOrientation(0, 0, 0);
-        actor.rotateY(y);
-        actor.rotateX(p);
-        actor.rotateZ(r);
-      }
+      const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
+      actor.setOrientation(0, 0, 0);
+      actor.rotateY(y);
+      actor.rotateX(p);
+      actor.rotateZ(r);
 
       removeActor("vorticity");
       actorsRef.current.vorticity = actor;
