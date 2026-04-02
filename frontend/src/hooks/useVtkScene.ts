@@ -707,11 +707,8 @@ actor.rotateZ(r);
           actor.getProperty().setColor(0.376, 0.647, 0.98);
         }
 
-        const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
-        actor.setOrientation(0, 0, 0);
-actor.rotateY(y);
-actor.rotateX(p);
-actor.rotateZ(r);
+        // Pressure lines are simulation results - already oriented correctly from backend
+        // No additional orientation needed
 
         removeActor("pressureLines");
         actorsRef.current.pressureLines = actor;
@@ -764,10 +761,18 @@ actor.rotateZ(r);
       normals.setInputData(polyData);
       normals.setComputePointNormals(true);
       normals.setComputeCellNormals(false);
-      normals.setSplitting(false);
-      normals.setFeatureAngle(30);
-      normals.setConsistency(true);
-      normals.setAutoOrientNormals(true);
+      if (typeof normals.setSplitting === "function") {
+        normals.setSplitting(false);
+      }
+      if (typeof normals.setFeatureAngle === "function") {
+        normals.setFeatureAngle(30);
+      }
+      if (typeof normals.setConsistency === "function") {
+        normals.setConsistency(true);
+      }
+      if (typeof normals.setAutoOrientNormals === "function") {
+        normals.setAutoOrientNormals(true);
+      }
       normals.update();
       polyData = normals.getOutputData();
 
@@ -803,11 +808,16 @@ actor.rotateZ(r);
       if (!colorArr) prop.setColor(0.5, 0.1, 0.9);
 
       // ── 2. Apply orientation ───────────────────────────────────────
-      const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
-      actor.setOrientation(0, 0, 0);
-      actor.rotateY(y);
-      actor.rotateX(p);
-      actor.rotateZ(r);
+      // Only apply orientation to asset previews, NOT simulation results.
+      // Simulation results are already oriented correctly from the backend.
+      const isSimulationResult = vtpUrl?.includes('/media/simulations/');
+      if (!isSimulationResult) {
+        const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
+        actor.setOrientation(0, 0, 0);
+        actor.rotateY(y);
+        actor.rotateX(p);
+        actor.rotateZ(r);
+      }
 
       removeActor("vorticity");
       actorsRef.current.vorticity = actor;
