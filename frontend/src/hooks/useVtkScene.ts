@@ -42,6 +42,7 @@ interface ActorMap {
   noseMarker?: any;
   tailMarker?: any;
   vorticity?: any;
+  streamlines?: any;
 }
 
 interface CacheEntry {
@@ -491,29 +492,45 @@ mapper.setInterpolateScalarsBeforeMapping(true);
 
       // ── Apply orientation (Three.js → VTK convention fix) ──────────
       const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
+      
+      // Only apply visual rotation to the base asset preview. Results are already rotated.
+      const isAssetPreview = foilUrl === assetPreviewUrl && !activeFrameUrl && !fallbackUrl;
+      const effectiveP = isAssetPreview ? p : 0;
+      const effectiveY = isAssetPreview ? y : 0;
+      const effectiveR = isAssetPreview ? r : 0;
+
+      // Find geometric center for origin of rotation
+      const cx = (bounds[0] + bounds[1]) / 2;
+      const cy = (bounds[2] + bounds[3]) / 2;
+      const cz = (bounds[4] + bounds[5]) / 2;
+
       function applyOrientation(
         actor: any,
         pitch: number,
         yaw: number,
         roll: number,
       ) {
+        // Set origin to geometric center so it rotates explicitly around itself,
+        // avoiding "flying away/disappearing" artifacts.
+        actor.setOrigin(cx, cy, cz);
+        
         // Reset orientation (VTK rotations are cumulative)
         actor.setOrientation(0, 0, 0);
         // VTK: rotateY (yaw), then rotateX (pitch), then rotateZ (roll)
         actor.rotateY(yaw);
         actor.rotateX(pitch);
         actor.rotateZ(roll);
-        // Debug: log world bounds after orientation
-        const worldBounds = actor.getBounds();
-        console.log("[VTK] Foil world bounds after orientation:", worldBounds);
-        if (Math.abs(worldBounds[5] - worldBounds[4]) < 0.0001) {
-          console.error(
-            "[VTK] Foil has zero Z thickness after transform — rotation is edge-on",
-          );
-        }
       }
+
       for (const [k, a] of Object.entries(actorsRef.current)) {
-        if (a && k !== "gridPlane") applyOrientation(a, p, y, r);
+        if (a) {
+          // Do not rotate gridPlane. Do not rotate flowArrow (it must always indicate +X flow direction).
+          if (k === "gridPlane" || k === "flowArrow") {
+             // flow arrow and grid stay world-aligned
+          } else {
+             applyOrientation(a, effectiveP, effectiveY, effectiveR);
+          }
+        }
       }
 
       // ── Camera fit (on new run / new geometry URL) ──────────────────
@@ -637,11 +654,8 @@ mapper.setInterpolateScalarsBeforeMapping(true);
           actor.getProperty().setRepresentation(1); // wireframe
         }
 
-        const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
+        // Flow lines are simulation results; they ALREADY have the orientation applied
         actor.setOrientation(0, 0, 0);
-actor.rotateY(y);
-actor.rotateX(p);
-actor.rotateZ(r);
 
         removeActor("flowLines");
         actorsRef.current.flowLines = actor;
@@ -733,105 +747,199 @@ actor.rotateZ(r);
   //  Uses the file_manifest from the store if available.
   // ────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-  const ctx = contextRef.current;
-  if (!ctx) return;
+    const ctx = contextRef.current;
+    if (!ctx) return;
 
-  if (!showVorticity && !showStreamlines) {
-    removeActor("vorticity");
-    render();
-    return;
-  }
-
-  const simId = useSimStore.getState().activeSimId;
-  if (!simId) return;
-
-  const vtpUrl = showVorticity
-    ? `${baseUrl}/media/simulations/${simId}/q_criterion_isosurface.vtp`
-    : `${baseUrl}/media/simulations/${simId}/skin_friction_lines.vtp`;
-
-  (async () => {
-    try {
-      let polyData = await fetchPolyData(vtpUrl);
-
-      // ── 1. Compute smooth normals for the isosurface ──────────────
-      // featureAngle=30 is more aggressive than the foil (60°) because
-      // Q-criterion isosurfaces have no meaningful sharp features —
-      // we want maximum smoothness across the whole surface.
-      const normals = vtkPolyDataNormals.newInstance();
-      normals.setInputData(polyData);
-      normals.setComputePointNormals(true);
-      normals.setComputeCellNormals(false);
-      if (typeof normals.setSplitting === "function") {
-        normals.setSplitting(false);
-      }
-      if (typeof normals.setFeatureAngle === "function") {
-        normals.setFeatureAngle(30);
-      }
-      if (typeof normals.setConsistency === "function") {
-        normals.setConsistency(true);
-      }
-      if (typeof normals.setAutoOrientNormals === "function") {
-        normals.setAutoOrientNormals(true);
-      }
-      normals.update();
-      polyData = normals.getOutputData();
-
-      const mapper = vtkMapper.newInstance();
-      mapper.setInputData(polyData);
-
-      const vortArr = polyData.getPointData?.()?.getArrayByName?.("vorticity_x");
-      const cfArr   = polyData.getPointData?.()?.getArrayByName?.("Cf");
-      const colorArr = vortArr ?? cfArr;
-
-      if (colorArr) {
-        const range = colorArr.getRange();
-        const cm = useSimStore.getState().colormap;
-        const lut = createVtkLookupTable(cm, [range[0], range[1]]);
-        mapper.setLookupTable(lut);
-        mapper.setScalarRange(range[0], range[1]);
-        mapper.setColorByArrayName(colorArr.getName());
-        mapper.setScalarModeToUsePointFieldData();
-        mapper.setScalarVisibility(true);
-      } else {
-        mapper.setScalarVisibility(false);
-      }
-
-      const actor = vtkActor.newInstance();
-      actor.setMapper(mapper);
-      const prop = actor.getProperty();
-      prop.setOpacity(showVorticity ? 0.45 : 0.7);
-      prop.setAmbient(0.2);
-      prop.setDiffuse(0.8);
-      prop.setSpecular(0.15);
-      prop.setSpecularPower(16);
-      prop.setInterpolationToPhong();
-      if (!colorArr) prop.setColor(0.5, 0.1, 0.9);
-
-      // ── 2. Apply orientation ───────────────────────────────────────
-      // Only apply orientation to asset previews, NOT simulation results.
-      // Simulation results are already oriented correctly from the backend.
-      const isSimulationResult = vtpUrl?.includes('/media/simulations/');
-      if (!isSimulationResult) {
-        const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
-        actor.setOrientation(0, 0, 0);
-        actor.rotateY(y);
-        actor.rotateX(p);
-        actor.rotateZ(r);
-      }
-
-      removeActor("vorticity");
-      actorsRef.current.vorticity = actor;
-      ctx.renderer.addActor(actor);
-      render();
-      console.info(`[useVtkScene] Vorticity/streamlines loaded: ${polyData.getNumberOfPoints()} pts`);
-    } catch (err) {
-      console.error("[useVtkScene] Failed to load vorticity/streamlines:", vtpUrl, err);
+    if (!showVorticity) {
       removeActor("vorticity");
       render();
+      return;
     }
-  })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [showVorticity, showStreamlines, activeSimId]);
+
+    const simId = useSimStore.getState().activeSimId;
+    if (!simId) return;
+
+    const vtpUrl = `${baseUrl}/media/simulations/${simId}/q_criterion_isosurface.vtp`;
+
+    (async () => {
+      try {
+        let polyData = await fetchPolyData(vtpUrl);
+        if (!polyData || polyData.getNumberOfPoints() === 0) {
+          console.warn("[useVtkScene] Q-criterion isosurface is empty");
+          removeActor("vorticity");
+          render();
+          return;
+        }
+
+        // ── 1. Compute smooth normals for the isosurface ──────────────
+        const normals = vtkPolyDataNormals.newInstance();
+        normals.setInputData(polyData);
+        normals.setComputePointNormals(true);
+        normals.setComputeCellNormals(false);
+        if (typeof normals.setSplitting === "function") {
+          normals.setSplitting(false);
+        }
+        if (typeof normals.setFeatureAngle === "function") {
+          normals.setFeatureAngle(30);
+        }
+        if (typeof normals.setConsistency === "function") {
+          normals.setConsistency(true);
+        }
+        if (typeof normals.setAutoOrientNormals === "function") {
+          normals.setAutoOrientNormals(true);
+        }
+        normals.update();
+        polyData = normals.getOutputData();
+
+        const mapper = vtkMapper.newInstance();
+        mapper.setInputData(polyData);
+
+        // Prefer vorticity magnitude for coloring, fall back to x-component
+        const vortMagArr = polyData.getPointData?.()?.getArrayByName?.("vorticity_mag");
+        const vortXArr   = polyData.getPointData?.()?.getArrayByName?.("vorticity_x");
+        const colorArr   = vortMagArr ?? vortXArr;
+
+        if (colorArr) {
+          const range = colorArr.getRange();
+          const cm = useSimStore.getState().colormap;
+          const lut = createVtkLookupTable(cm, [range[0], range[1]]);
+          mapper.setLookupTable(lut);
+          mapper.setScalarRange(range[0], range[1]);
+          mapper.setColorByArrayName(colorArr.getName());
+          mapper.setScalarModeToUsePointFieldData();
+          mapper.setScalarVisibility(true);
+        } else {
+          mapper.setScalarVisibility(false);
+        }
+
+        const actor = vtkActor.newInstance();
+        actor.setMapper(mapper);
+        const prop = actor.getProperty();
+        prop.setOpacity(0.45);
+        prop.setAmbient(0.2);
+        prop.setDiffuse(0.8);
+        prop.setSpecular(0.15);
+        prop.setSpecularPower(16);
+        prop.setInterpolationToPhong();
+        prop.setBackfaceCulling(false);  // Show both sides of isosurface
+        if (!colorArr) prop.setColor(0.5, 0.1, 0.9);
+
+        // Results are already simulated using the rotated bounds
+
+        actor.setOrientation(0, 0, 0);
+
+
+
+
+        removeActor("vorticity");
+        actorsRef.current.vorticity = actor;
+        ctx.renderer.addActor(actor);
+        render();
+        console.info(`[useVtkScene] Q-criterion loaded: ${polyData.getNumberOfPoints()} pts`);
+      } catch (err) {
+        console.error("[useVtkScene] Failed to load Q-criterion:", vtpUrl, err);
+        removeActor("vorticity");
+        render();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showVorticity, activeSimId]);
+
+  // ────────────────────────────────────────────────────────────────────────
+  //  EFFECT 2d: Load / remove streamlines (skin friction lines)
+  // ────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const ctx = contextRef.current;
+    if (!ctx) return;
+
+    if (!showStreamlines) {
+      removeActor("streamlines");
+      render();
+      return;
+    }
+
+    const simId = useSimStore.getState().activeSimId;
+    if (!simId) return;
+
+    const vtpUrl = `${baseUrl}/media/simulations/${simId}/skin_friction_lines.vtp`;
+
+    (async () => {
+      try {
+        const polyData = await fetchPolyData(vtpUrl);
+        if (!polyData || polyData.getNumberOfPoints() === 0) {
+          console.warn("[useVtkScene] Skin friction lines are empty");
+          removeActor("streamlines");
+          render();
+          return;
+        }
+
+        // Skin friction lines are line cells - apply tube filter for visibility
+        const hasLines = polyData.getNumberOfLines?.() > 0;
+
+        const mapper = vtkMapper.newInstance();
+
+        if (hasLines) {
+          // Get foil bounds for tube radius
+          const foilBounds = foilPolyRef.current?.getBounds?.();
+          const chord = foilBounds
+            ? Math.max(foilBounds[1] - foilBounds[0], 0.01)
+            : 1;
+          const tubeRadius = chord * 0.002;
+
+          const tube = vtkTubeFilter.newInstance();
+          tube.setInputData(polyData);
+          tube.setRadius(tubeRadius);
+          tube.setNumberOfSides(8);
+          mapper.setInputConnection(tube.getOutputPort());
+        } else {
+          mapper.setInputData(polyData);
+        }
+
+        // Color by velocity magnitude if available
+        const uArr = polyData.getPointData?.()?.getArrayByName?.("U");
+        if (uArr) {
+          const range = uArr.getRange();
+          const cm = useSimStore.getState().colormap;
+          const lut = createVtkLookupTable(cm, [range[0], range[1]]);
+          mapper.setLookupTable(lut);
+          mapper.setScalarRange(range[0], range[1]);
+          mapper.setColorByArrayName("U");
+          mapper.setScalarModeToUsePointFieldData();
+          mapper.setScalarVisibility(true);
+        } else {
+          mapper.setScalarVisibility(false);
+        }
+
+        const actor = vtkActor.newInstance();
+        actor.setMapper(mapper);
+        const prop = actor.getProperty();
+        prop.setOpacity(0.85);
+        prop.setAmbient(0.3);
+        prop.setDiffuse(0.7);
+        if (!uArr) {
+          prop.setColor(0.376, 0.647, 0.98);  // Flow blue
+        }
+
+        // Results are already simulated using the rotated bounds
+
+        actor.setOrientation(0, 0, 0);
+
+
+
+
+        removeActor("streamlines");
+        actorsRef.current.streamlines = actor;
+        ctx.renderer.addActor(actor);
+        render();
+        console.info(`[useVtkScene] Streamlines loaded: ${polyData.getNumberOfPoints()} pts, lines=${polyData.getNumberOfLines?.() || 0}`);
+      } catch (err) {
+        console.error("[useVtkScene] Failed to load streamlines:", vtpUrl, err);
+        removeActor("streamlines");
+        render();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showStreamlines, activeSimId]);
 
   // ────────────────────────────────────────────────────────────────────────
   //  EFFECT 3: Update pressure colormap / toggle (no geometry reload)

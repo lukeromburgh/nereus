@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Box, PlayCircle, Circle, Loader2 } from "lucide-react";
+import {
+  Box,
+  PlayCircle,
+  Circle,
+  Loader2,
+  ChevronRight,
+  Folder as FolderIcon,
+  FolderOpen,
+  FileBox,
+} from "lucide-react";
 import { useSimStore } from "../store/useSimStore";
-
-type HydrofoilAsset = {
-  id: number;
-  project: number;
-  name: string;
-  file: string;
-  uploaded_at: string;
-};
+import { assetApi } from "../lib/assetApi";
+import type { Folder, HydrofoilAsset } from "../types/assets";
 
 type SimulationRun = {
   id: number;
@@ -33,6 +36,110 @@ function statusDotAnim(status: string) {
   return "";
 }
 
+// ── Recursive folder/asset tree for sidebar ──────────────────────────────────
+
+function AssetItem({
+  asset,
+  isSelected,
+  depth,
+  onSelect,
+}: {
+  asset: HydrofoilAsset;
+  isSelected: boolean;
+  depth: number;
+  onSelect: (asset: HydrofoilAsset) => void;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(asset)}
+      className={`text-left w-full flex items-center gap-1.5 py-1.5 rounded-md text-xs transition-all duration-200 ${
+        isSelected
+          ? "bg-accent/10 border border-accent/25 text-slate-100"
+          : "border border-transparent hover:bg-white/[0.03] hover:border-hud-border text-slate-400 hover:text-slate-200"
+      }`}
+      style={{ paddingLeft: `${depth * 12 + 8}px`, paddingRight: 8 }}
+    >
+      <FileBox className="h-3 w-3 text-slate-500 flex-shrink-0" />
+      <span className="truncate font-medium">{asset.name}</span>
+    </button>
+  );
+}
+
+function FolderNode({
+  folder,
+  depth,
+  selectedAssetId,
+  onSelectAsset,
+  expandedIds,
+  onToggle,
+}: {
+  folder: Folder;
+  depth: number;
+  selectedAssetId: number | null;
+  onSelectAsset: (asset: HydrofoilAsset) => void;
+  expandedIds: Set<number>;
+  onToggle: (id: number) => void;
+}) {
+  const isOpen = expandedIds.has(folder.id);
+  const hasChildren =
+    (folder.children && folder.children.length > 0) ||
+    (folder.assets && folder.assets.length > 0);
+
+  return (
+    <div>
+      <button
+        onClick={() => onToggle(folder.id)}
+        className="text-left w-full flex items-center gap-1.5 py-1.5 rounded-md text-xs text-slate-400 hover:text-slate-200 hover:bg-white/[0.03] transition-all duration-200"
+        style={{ paddingLeft: `${depth * 12 + 8}px`, paddingRight: 8 }}
+      >
+        <ChevronRight
+          className={`h-3 w-3 text-slate-500 transition-transform flex-shrink-0 ${
+            isOpen ? "rotate-90" : ""
+          }`}
+        />
+        {isOpen ? (
+          <FolderOpen className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+        ) : (
+          <FolderIcon className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+        )}
+        <span className="truncate font-medium">{folder.name}</span>
+        {folder.asset_count > 0 && (
+          <span className="text-2xs text-slate-600 ml-auto font-mono">
+            {folder.asset_count}
+          </span>
+        )}
+      </button>
+
+      {isOpen && hasChildren && (
+        <div>
+          {folder.children?.map((child) => (
+            <FolderNode
+              key={`f-${child.id}`}
+              folder={child}
+              depth={depth + 1}
+              selectedAssetId={selectedAssetId}
+              onSelectAsset={onSelectAsset}
+              expandedIds={expandedIds}
+              onToggle={onToggle}
+            />
+          ))}
+          {folder.assets?.map((asset) => (
+            <AssetItem
+              key={`a-${asset.id}`}
+              asset={asset}
+              isSelected={asset.id === selectedAssetId}
+              depth={depth + 1}
+              onSelect={onSelectAsset}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sidebar ──────────────────────────────────────────────────────────────────
+
 interface SidebarProps {
   refreshNonce: number;
 }
@@ -47,9 +154,33 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
     updateSim,
   } = useSimStore();
 
-  const [assets, setAssets] = useState<HydrofoilAsset[]>([]);
+  const [rootFolders, setRootFolders] = useState<Folder[]>([]);
+  const [rootAssets, setRootAssets] = useState<HydrofoilAsset[]>([]);
   const [runs, setRuns] = useState<SimulationRun[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+
+  const toggleFolder = (id: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Collect all assets (flattened) to find selected asset by id
+  const allAssets = useMemo(() => {
+    const result: HydrofoilAsset[] = [...rootAssets];
+    function collect(folders: Folder[]) {
+      for (const f of folders) {
+        if (f.assets) result.push(...f.assets);
+        if (f.children) collect(f.children);
+      }
+    }
+    collect(rootFolders);
+    return result;
+  }, [rootFolders, rootAssets]);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,25 +188,27 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
     async function load() {
       setLoading(true);
       try {
-        const [assetsResp, runsResp] = await Promise.all([
-          axios.get<HydrofoilAsset[]>("http://localhost:8000/api/assets/"),
+        const [treeResp, runsResp] = await Promise.all([
+          assetApi.getFolderTree(projectId),
           axios.get<SimulationRun[]>("http://localhost:8000/api/runs/"),
         ]);
 
         if (cancelled) return;
 
-        const assetsForProject = assetsResp.data.filter(
-          (a) => a.project === projectId,
-        );
+        setRootFolders(treeResp.data.folders);
+        setRootAssets(treeResp.data.assets);
+
         const runsForProject = runsResp.data
           .filter((r) => r.project === projectId)
           .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-
-        setAssets(assetsForProject);
         setRuns(runsForProject);
 
-        if (!selectedAssetId && assetsForProject.length > 0) {
-          setSelectedAsset(assetsForProject[0]);
+        // Auto-select first asset if none selected
+        if (!selectedAssetId) {
+          const firstAsset =
+            treeResp.data.assets[0] ||
+            findFirstAsset(treeResp.data.folders);
+          if (firstAsset) setSelectedAsset(firstAsset);
         }
       } catch (err) {
         console.error("Failed loading sidebar data", err);
@@ -91,9 +224,13 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
   }, [projectId, refreshNonce, selectedAssetId, setSelectedAssetId]);
 
   const selectedAsset = useMemo(
-    () => assets.find((a) => a.id === selectedAssetId) || null,
-    [assets, selectedAssetId],
+    () => allAssets.find((a) => a.id === selectedAssetId) || null,
+    [allAssets, selectedAssetId],
   );
+
+  const handleSelectAsset = (asset: HydrofoilAsset) => {
+    setSelectedAsset(asset);
+  };
 
   const handleSelectRun = async (runId: number) => {
     selectSim(runId);
@@ -106,6 +243,8 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
       console.error("Failed to load run", err);
     }
   };
+
+  const hasAnyAssets = rootFolders.length > 0 || rootAssets.length > 0;
 
   return (
     <div className="p-3 flex flex-col gap-5 scrollbar-dark">
@@ -125,36 +264,37 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
           </div>
         )}
 
-        {loading && assets.length === 0 ? (
+        {loading && !hasAnyAssets ? (
           <div className="flex items-center gap-2 text-2xs text-slate-600">
             <Loader2 className="h-3 w-3 animate-spin" />
             Loading…
           </div>
-        ) : assets.length === 0 ? (
+        ) : !hasAnyAssets ? (
           <div className="text-2xs text-slate-600 px-1">
             No assets yet. Upload one above.
           </div>
         ) : (
-          <div className="flex flex-col gap-1">
-            {assets.map((asset) => {
-              const isSelected = asset.id === selectedAssetId;
-              return (
-                <button
-                  key={asset.id}
-                  onClick={() => setSelectedAsset(asset)}
-                  className={`text-left w-full px-2.5 py-2 rounded-md text-xs transition-all duration-200 ${
-                    isSelected
-                      ? "bg-accent/10 border border-accent/25 text-slate-100"
-                      : "border border-transparent hover:bg-white/[0.03] hover:border-hud-border text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  <div className="font-medium truncate">{asset.name}</div>
-                  <div className="text-2xs text-slate-600 truncate mt-0.5">
-                    {asset.file}
-                  </div>
-                </button>
-              );
-            })}
+          <div className="flex flex-col gap-0.5">
+            {rootFolders.map((folder) => (
+              <FolderNode
+                key={`f-${folder.id}`}
+                folder={folder}
+                depth={0}
+                selectedAssetId={selectedAssetId}
+                onSelectAsset={handleSelectAsset}
+                expandedIds={expandedIds}
+                onToggle={toggleFolder}
+              />
+            ))}
+            {rootAssets.map((asset) => (
+              <AssetItem
+                key={`a-${asset.id}`}
+                asset={asset}
+                isSelected={asset.id === selectedAssetId}
+                depth={0}
+                onSelect={handleSelectAsset}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -221,4 +361,16 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
       </div>
     </div>
   );
+}
+
+/** Find the first asset in a folder tree (depth-first). */
+function findFirstAsset(folders: Folder[]): HydrofoilAsset | null {
+  for (const f of folders) {
+    if (f.assets && f.assets.length > 0) return f.assets[0];
+    if (f.children) {
+      const found = findFirstAsset(f.children);
+      if (found) return found;
+    }
+  }
+  return null;
 }

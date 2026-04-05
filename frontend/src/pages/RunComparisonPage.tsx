@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import axios from "axios";
 import { useSimStore } from "../store/useSimStore";
 import { VtkViewport } from "../components/VtkViewport";
 import { ColorbarLegend } from "../components/ColorbarLegend";
 import { MetricHUD } from "../components/MetricHUD";
-import { TopNavbar } from "../components/TopNavbar";
+import { useToolbar } from "../components/AppShell";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -124,6 +124,7 @@ function getLinePath(
 
 const RunComparisonPage: React.FC = () => {
   const { projectId } = useSimStore();
+  const { setToolbarContent } = useToolbar();
 
   // Run selection
   const [runs, setRuns] = useState<SimulationRun[]>([]);
@@ -162,7 +163,7 @@ const RunComparisonPage: React.FC = () => {
     };
   };
 
-  const handleCompare = async () => {
+  const handleCompare = useCallback(async () => {
     if (!runAId || !runBId) return;
     setLoading(true);
     setCompared(false);
@@ -179,7 +180,7 @@ const RunComparisonPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [runAId, runBId]);
 
   // Derived chart data
   const ldA = metricsA?.ldSeries ?? [];
@@ -256,90 +257,63 @@ const RunComparisonPage: React.FC = () => {
 
   const canCompare = runAId !== null && runBId !== null && runAId !== runBId;
 
+  // ── Inject comparison-specific toolbar ────────────────────────────────────
+  useEffect(() => {
+    setToolbarContent(
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <span className="hud-label text-accent-cyan text-2xs">RUN A</span>
+          <select
+            value={runAId ?? ""}
+            onChange={(e) => setRunAId(Number(e.target.value) || null)}
+            className="bg-[#181f22] border border-hud-border text-slate-300 rounded-md px-2 py-1 text-xs w-48 focus:outline-none focus:border-accent-cyan transition-colors appearance-none"
+          >
+            <option value="">Select Run</option>
+            {runs.map((r) => (
+              <option key={r.id} value={r.id}>
+                #{r.id} — {new Date(r.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="hud-label text-accent-emerald text-2xs">RUN B</span>
+          <select
+            value={runBId ?? ""}
+            onChange={(e) => setRunBId(Number(e.target.value) || null)}
+            className="bg-[#181f22] border border-hud-border text-slate-300 rounded-md px-2 py-1 text-xs w-48 focus:outline-none focus:border-accent-emerald transition-colors appearance-none"
+          >
+            <option value="">Select Run</option>
+            {runs.map((r) => (
+              <option key={r.id} value={r.id}>
+                #{r.id} — {new Date(r.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          onClick={handleCompare}
+          disabled={!canCompare || loading}
+          className={`px-4 py-1 text-xs font-bold rounded-md transition-all duration-200 uppercase tracking-widest ${
+            canCompare && !loading
+              ? "bg-accent-cyan text-[#0d1518] hover:opacity-90 border border-accent-cyan"
+              : "bg-[#181f22] border border-hud-border text-slate-600 cursor-not-allowed"
+          }`}
+        >
+          {loading ? "Loading…" : "Compare"}
+        </button>
+      </div>
+    );
+    return () => setToolbarContent(null);
+  }, [setToolbarContent, runs, runAId, runBId, canCompare, loading, handleCompare]);
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#0d1518] text-slate-300">
-      <TopNavbar
-        onRefresh={function (): void {
-          throw new Error("Function not implemented.");
-        }}
-      />
-
+    <div className="flex flex-col h-full bg-[#0d1518] text-slate-300 overflow-y-auto">
       <main className="flex-1 px-8 py-6 max-w-screen-2xl mx-auto w-full">
-        {/* ── Section 01: RUN SELECTOR ─────────────────────────────────────── */}
-        <div className="flex items-end gap-4 mb-6">
-          <div className="flex flex-col gap-1">
-            <span className="hud-label text-accent-cyan">RUN A</span>
-            <select
-              value={runAId ?? ""}
-              onChange={(e) => setRunAId(Number(e.target.value) || null)}
-              className="bg-[#181f22] border border-hud-border text-slate-300 rounded-md px-3 py-2 text-xs w-64 focus:outline-none focus:border-accent-cyan transition-colors appearance-none"
-            >
-              <option value="" className="text-slate-500 bg-[#181f22]">
-                Select Run
-              </option>
-              {runs.map((r) => (
-                <option
-                  key={r.id}
-                  value={r.id}
-                  className="bg-[#181f22] text-slate-300"
-                >
-                  #{r.id} —{" "}
-                  {new Date(r.created_at).toLocaleString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <span className="hud-label text-accent-emerald">RUN B</span>
-            <select
-              value={runBId ?? ""}
-              onChange={(e) => setRunBId(Number(e.target.value) || null)}
-              className="bg-[#181f22] border border-hud-border text-slate-300 rounded-md px-3 py-2 text-xs w-64 focus:outline-none focus:border-accent-emerald transition-colors appearance-none"
-            >
-              <option value="" className="text-slate-500 bg-[#181f22]">
-                Select Run
-              </option>
-              {runs.map((r) => (
-                <option
-                  key={r.id}
-                  value={r.id}
-                  className="bg-[#181f22] text-slate-300"
-                >
-                  #{r.id} —{" "}
-                  {new Date(r.created_at).toLocaleString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            onClick={handleCompare}
-            disabled={!canCompare || loading}
-            className={`px-5 py-2 text-xs font-bold rounded-md transition-all duration-200 uppercase tracking-widest
-              ${
-                canCompare && !loading
-                  ? "bg-accent-cyan text-[#0d1518] hover:opacity-90 border border-accent-cyan"
-                  : "bg-[#181f22] border border-hud-border text-slate-600 cursor-not-allowed"
-              }`}
-          >
-            {loading ? "Loading…" : "Compare"}
-          </button>
-        </div>
-
-        <div className="h-px bg-hud-border mb-8" />
 
         {/* ── Section 02: L/D CHART + SYNTHESIS ───────────────────────────── */}
         <div className="grid grid-cols-12 gap-6 mb-8">

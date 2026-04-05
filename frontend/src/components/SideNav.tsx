@@ -1,21 +1,16 @@
 import { NavLink } from "react-router-dom";
 import {
   Activity,
+  FolderOpen,
   TrendingUp,
-  Layers,
-  BarChart2,
-  Globe,
-  FileText,
   LifeBuoy,
+  FileText,
 } from "lucide-react";
 
 const navItems = [
   { key: "simulation", label: "Simulation", to: "/", icon: Activity },
+  { key: "assets", label: "Assets", to: "/assets", icon: FolderOpen },
   { key: "telemetry", label: "Telemetry", to: "/comparison", icon: TrendingUp },
-  { key: "geometry", label: "Geometry", to: "/geometry", icon: Layers },
-  { key: "analysis", label: "Analysis", to: "/analysis", icon: BarChart2 },
-  { key: "environment", label: "Environment", to: "/environment", icon: Globe },
-  { key: "reports", label: "Reports", to: "/reports", icon: FileText },
 ];
 
 import pkg from "../../package.json";
@@ -28,7 +23,7 @@ export default function SideNav() {
   const appVersion =
     import.meta.env.VITE_APP_VERSION || pkg.version || "v?.?.?";
   return (
-    <nav className="fixed left-0 top-0 z-50 w-64 h-screen flex flex-col justify-between bg-surface-solid text-slate-300 border-r border-hud-border">
+    <nav className="w-56 h-full flex flex-col justify-between bg-surface-solid text-slate-300 border-r border-hud-border flex-shrink-0">
       <div className="px-4 pt-6">
         <div className="mb-6 px-2">
           <div className="text-xs text-slate-500 uppercase tracking-wider font-medium">
