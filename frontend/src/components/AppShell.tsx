@@ -1,22 +1,9 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { useCallback, useState } from "react";
 import { Outlet } from "react-router-dom";
 import SideNav from "./SideNav";
 import { Waves } from "lucide-react";
-
-// ── Toolbar Context ──────────────────────────────────────────────────────────
-// Pages call `useToolbar()` to inject their specific controls into the top bar.
-
-interface ToolbarContextValue {
-  setToolbarContent: (content: ReactNode) => void;
-}
-
-const ToolbarContext = createContext<ToolbarContextValue | null>(null);
-
-export function useToolbar() {
-  const ctx = useContext(ToolbarContext);
-  if (!ctx) throw new Error("useToolbar must be used within <AppShell>");
-  return ctx;
-}
+import { ToolbarContext } from "../hooks/useToolbar";
+import type { ReactNode } from "react";
 
 // ── AppShell ─────────────────────────────────────────────────────────────────
 

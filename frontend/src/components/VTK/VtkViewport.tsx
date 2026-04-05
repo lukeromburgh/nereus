@@ -9,8 +9,9 @@ import { useSimStore } from "../../store/useSimStore";
 import { useVtkRenderer } from "../../hooks/useVtkRenderer";
 import { useVtkScene } from "../../hooks/useVtkScene";
 import { useVtkPlayback } from "../../hooks/useVtkPlayback";
-import { MetricHUD } from "./MetricHUD";
+import { useTransformGizmo } from "../../hooks/useTransformGizmo";
 import { StatusBadge } from "./StatusBadge";
+import { GizmoToolbar } from "../GizmoToolbar";
 import { LayerManager } from ".././LayerManager";
 import { ColorbarLegend } from ".././ColorbarLegend";
 import { TimelineController } from ".././TimelineController";
@@ -47,19 +48,37 @@ export function VtkViewport() {
   // ── Scene management ─────────────────────────────────────────────────
   useVtkScene(vtkContext, contextReady);
 
+  // ── Transform gizmo ─────────────────────────────────────────────────
+  useTransformGizmo(vtkContext, containerRef, contextReady);
+
   // ── Playback loop ────────────────────────────────────────────────────
   const renderVtk = useCallback(() => {
-    vtkContext.current?.renderWindow.render();
-  }, [vtkContext]);
+    vtkContext.current?.renderWindow?.render();
+  }, [vtkContext.current?.renderWindow]);
   useVtkPlayback(renderVtk);
 
   // ── Render ───────────────────────────────────────────────────────────
   return (
     <div className="w-full h-full relative overflow-hidden bg-slate-950">
-      {/* VTK.js canvas container */}
+      {/* Fixed CSS grid background — never rotates, like Unity's infinite grid */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          backgroundImage: `
+            linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px),
+            linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)
+          `,
+          backgroundSize: "20px 20px, 20px 20px, 100px 100px, 100px 100px",
+          backgroundPosition: "center center",
+        }}
+      />
+
+      {/* VTK.js canvas container — transparent bg so CSS grid shows through */}
       <div
         ref={containerRef}
-        className="absolute inset-0 z-0"
+        className="absolute inset-0 z-[1]"
         style={{ touchAction: "none" }}
       />
 
@@ -68,6 +87,9 @@ export function VtkViewport() {
 
       {/* Main metrics overlay removed (redundant) */}
       {/* <MetricHUD /> */}
+
+      {/* Transform gizmo toolbar (top center) */}
+      <GizmoToolbar />
 
       {/* Analysis overlays (DOM) */}
       <LayerManager />

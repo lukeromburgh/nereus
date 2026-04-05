@@ -1516,22 +1516,24 @@ def post_process(case_dir, sim_id, *, velocity, rho=1025.0, p_vapour=None):
                 if "vorticity_mag" in vol.array_names or "vorticity_x" in vol.array_names:
                     iso = iso.sample(vol)
 
-                # Clip to wake region: only keep geometry downstream of trailing edge
+                # Clip to foil + near-wake region to remove far-field noise
                 if foil_bbox is not None:
-                    te_x = foil_bbox["x_max"]
                     chord = foil_bbox["x_max"] - foil_bbox["x_min"]
-                    # Keep only points x > trailing_edge (wake region)
+                    # Include the full foil extent plus wake downstream
                     iso = iso.clip_box(
                         bounds=[
-                            te_x, te_x + 5 * chord,  # x: wake region (0-5 chords downstream)
+                            foil_bbox["x_min"] - chord, foil_bbox["x_max"] + 5 * chord,  # x: foil + wake
                             foil_bbox["y_min"] - chord, foil_bbox["y_max"] + chord,  # y: spanwise
                             foil_bbox["z_min"] - 2 * chord, foil_bbox["z_max"] + 2 * chord,  # z: depth
                         ],
                         invert=False,
                     )
-                    logger.info(f"Clipped isosurface to wake region (x > {te_x:.3f})")
+                    logger.info(f"Clipped isosurface to foil+wake region ({iso.n_points} pts remaining)")
 
                 if iso is not None and iso.n_points > 0:
+                    # clip_box may return UnstructuredGrid; convert for .vtp
+                    if not isinstance(iso, pv.PolyData):
+                        iso = iso.extract_surface()
                     iso_path = out_dir / "q_criterion_isosurface.vtp"
                     iso.save(str(iso_path))
                     file_manifest["q_criterion_isosurface"] = (

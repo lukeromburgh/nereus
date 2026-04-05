@@ -9,7 +9,7 @@ import { LogConsoleCompact } from "./components/VTK/LogConsoleCompact";
 import { AnalysisPanel } from "./components/AnalysisPanel";
 import { ToastContainer } from "./components/ToastContainer";
 import { useSimStore } from "./store/useSimStore";
-import { useToolbar } from "./components/AppShell";
+import { useToolbar } from "./hooks/useToolbar";
 
 // ── File validation ──────────────────────────────────────────────────────────
 
@@ -68,10 +68,16 @@ function SimulationToolbar({ onRefresh }: { onRefresh: () => void }) {
       setUploadState("idle");
       setUploadProgress(0);
       onRefresh();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Asset upload failed", err);
       setUploadState("error");
-      setUploadError(err?.response?.data?.detail || err?.message || "Upload failed");
+      let errorMessage = "Upload failed";
+      if (axios.isAxiosError(err) && err.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      setUploadError(errorMessage);
     }
   }, [projectId, setSelectedAsset, onRefresh]);
 

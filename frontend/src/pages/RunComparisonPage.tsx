@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import axios from "axios";
 import { useSimStore } from "../store/useSimStore";
-import { VtkViewport } from "../components/VtkViewport";
+import { VtkViewport } from "../components/VtkViewport-DEPRECATED";
 import { ColorbarLegend } from "../components/ColorbarLegend";
 import { MetricHUD } from "../components/MetricHUD";
-import { useToolbar } from "../components/AppShell";
+import { useToolbar } from "../hooks/useToolbar";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.conf import settings
-from .models import HydrofoilAsset, Project, SimulationRun
+from .models import Folder, HydrofoilAsset, Project, SimulationRun
 
 class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
@@ -10,8 +10,70 @@ class ProjectSerializer(serializers.ModelSerializer):
 class HydrofoilAssetSerializer(serializers.ModelSerializer):
     class Meta:
         model = HydrofoilAsset
-        fields = ['id', 'project', 'name', 'file', 'uploaded_at']
+        fields = ['id', 'project', 'name', 'file', 'folder', 'uploaded_at']
         read_only_fields = ['uploaded_at']
+
+    def validate_file(self, value):
+        max_size = 100 * 1024 * 1024  # 100 MB
+        if value.size > max_size:
+            raise serializers.ValidationError(
+                f"File too large ({value.size / 1024 / 1024:.1f} MB). Maximum is 100 MB."
+            )
+        if value.size == 0:
+            raise serializers.ValidationError("Uploaded file is empty.")
+        return value
+
+    def validate(self, data):
+        folder = data.get('folder')
+        project = data.get('project') or (self.instance and self.instance.project)
+        if folder and project and folder.project_id != project.id:
+            raise serializers.ValidationError(
+                {"folder": "Folder must belong to the same project as the asset."}
+            )
+        return data
+
+
+class FolderSerializer(serializers.ModelSerializer):
+    children = serializers.SerializerMethodField()
+    assets = serializers.SerializerMethodField()
+    asset_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Folder
+        fields = [
+            'id', 'project', 'name', 'parent',
+            'children', 'assets', 'asset_count',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
+    def get_children(self, obj):
+        return FolderSerializer(obj.children.all(), many=True, context=self.context).data
+
+    def get_assets(self, obj):
+        return HydrofoilAssetSerializer(obj.assets.all(), many=True, context=self.context).data
+
+    def get_asset_count(self, obj):
+        count = obj.assets.count()
+        for child in obj.children.all():
+            count += self.get_asset_count(child)
+        return count
+
+    def validate(self, data):
+        # Prevent duplicate folder names at the same level within a project
+        project = data.get('project') or (self.instance and self.instance.project)
+        parent = data.get('parent', self.instance.parent if self.instance else None)
+        name = data.get('name', self.instance.name if self.instance else None)
+
+        if project and name:
+            qs = Folder.objects.filter(project=project, parent=parent, name=name)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    {"name": "A folder with this name already exists at this level."}
+                )
+        return data
 
 class SimulationRunSerializer(serializers.ModelSerializer):
     visualization_urls = serializers.SerializerMethodField()

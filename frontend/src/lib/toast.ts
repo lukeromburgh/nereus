@@ -56,7 +56,7 @@ export function useToasts() {
 
   useEffect(() => {
     toastCallback = setToasts;
-    setToasts([...toastStack]);
+    requestAnimationFrame(() => setToasts([...toastStack]));
 
     return () => {
       if (toastCallback === setToasts) {

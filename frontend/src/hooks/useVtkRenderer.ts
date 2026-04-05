@@ -130,7 +130,7 @@ export function useVtkRenderer(
 
     // Safe first render — pipeline is fully wired now.
     renderWindow.render();
-    setContextReady(true);
+    requestAnimationFrame(() => setContextReady(true));
 
     // ── 6. Responsive resize ─────────────────────────────────────
     const resizeObserver = new ResizeObserver((entries) => {
@@ -158,7 +158,7 @@ export function useVtkRenderer(
       contextRef.current = null;
       setContextReady(false);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps — containerRef is stable
+  }, [containerRef]); // containerRef is stable and the only dependency
 
   return { contextRef, contextReady };
 }

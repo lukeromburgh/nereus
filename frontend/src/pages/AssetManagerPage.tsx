@@ -10,7 +10,7 @@ import {
   FileBox,
   MoreVertical,
 } from "lucide-react";
-import { useToolbar } from "../components/AppShell";
+import { useToolbar } from "../hooks/useToolbar";
 import { useAssetStore } from "../store/useAssetStore";
 import { useSimStore } from "../store/useSimStore";
 import AssetTreeView, {

@@ -73,8 +73,12 @@ export function ConfigPanel() {
     } catch (error) {
       console.error("Failed to launch simulation", error);
       const message = axios.isAxiosError(error)
-        ? (error.response?.data as any)?.detail || error.message || "Failed to launch simulation"
-        : (error instanceof Error ? error.message : "Failed to launch simulation");
+        ? (error.response?.data as { detail?: string })?.detail ||
+          error.message ||
+          "Failed to launch simulation"
+        : error instanceof Error
+          ? error.message
+          : "Failed to launch simulation";
       toast.error(message);
     }
   };
@@ -111,7 +115,7 @@ export function ConfigPanel() {
             step={0.1}
             unit="m/s"
             onChange={(v) => setVelocity(v)}
-            onLivePreview={(v) => {
+            onLivePreview={(_v) => {
               /* TODO: connect to live preview system */
             }}
           />
@@ -128,7 +132,7 @@ export function ConfigPanel() {
             step={0.5}
             unit="°"
             onChange={(v) => setAoA(v)}
-            onLivePreview={(v) => {
+            onLivePreview={(_v) => {
               /* TODO: connect to live preview system */
             }}
           />
@@ -146,7 +150,7 @@ export function ConfigPanel() {
             max={2.0}
             step={0.05}
             onChange={(v) => setMeshDensity(v)}
-            onLivePreview={(v) => {
+            onLivePreview={(_v) => {
               /* TODO: connect to live mesh previews */
             }}
           />

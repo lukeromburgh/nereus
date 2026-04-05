@@ -73,8 +73,11 @@ export default function FolderPickerModal({
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (open) requestAnimationFrame(() => setVisible(true));
-    else setVisible(false);
+    if (open) {
+      requestAnimationFrame(() => setVisible(true));
+    } else {
+      setVisible(false);
+    }
   }, [open]);
 
   if (!open) return null;

@@ -25,8 +25,15 @@ export function OrientationPanel() {
 
   const [collapsed, setCollapsed] = useState(true);
 
+  // Derive if we are in asset preview mode (where rotation correction is allowed)
+  const resultMeshPath = useSimStore((s) => s.resultMeshPath);
+  const totalFrames = useSimStore((s) => s.totalFrames);
+  const isAssetPreview = !resultMeshPath && totalFrames === 0;
+
   const isRunning =
     status === "PENDING" || status === "MESHING" || status === "RUNNING";
+
+  const isDisabled = !isAssetPreview || isRunning;
 
   /** Persist current orientation to the backend (single fire, not debounced). */
   const patchOrientation = useCallback(
@@ -83,6 +90,16 @@ export function OrientationPanel() {
 
       {!collapsed && (
         <div className="px-3 pb-3 flex flex-col gap-3">
+          {!isAssetPreview && (
+            <div className="rounded border border-blue-500/20 bg-blue-500/5 px-2.5 py-2 flex gap-2 items-start">
+              <AlertTriangle className="h-3.5 w-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+              <p className="text-2xs text-blue-300 leading-normal">
+                Orientation correction is locked while viewing simulation results. 
+                These values are baked into the CFD mesh by the solver.
+              </p>
+            </div>
+          )}
+
           {/* Sliders */}
           <FieldWithHint
             label="Pitch (Rotate X)"
@@ -94,6 +111,7 @@ export function OrientationPanel() {
               max={180}
               step={5}
               unit="°"
+              disabled={isDisabled}
               onChange={(v) => setPitch(v)}
               onLivePreview={(v) => setPitch(v)}
               onRelease={commitSlider}
@@ -110,6 +128,7 @@ export function OrientationPanel() {
               max={180}
               step={5}
               unit="°"
+              disabled={isDisabled}
               onChange={(v) => setRoll(v)}
               onLivePreview={(v) => setRoll(v)}
               onRelease={commitSlider}
@@ -126,6 +145,7 @@ export function OrientationPanel() {
               max={180}
               step={5}
               unit="°"
+              disabled={isDisabled}
               onChange={(v) => setYaw(v)}
               onLivePreview={(v) => setYaw(v)}
               onRelease={commitSlider}
@@ -136,7 +156,7 @@ export function OrientationPanel() {
           <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
-              disabled={isRunning}
+              disabled={isDisabled}
               onClick={() => handleQuickSet(0, 0, 180)}
               className="rounded px-2 py-1 text-2xs font-medium border border-hud-border bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:border-accent/40 transition-colors disabled:opacity-40"
             >
@@ -144,7 +164,7 @@ export function OrientationPanel() {
             </button>
             <button
               type="button"
-              disabled={isRunning}
+              disabled={isDisabled}
               onClick={() => handleQuickSet(0, 90, 0)}
               className="rounded px-2 py-1 text-2xs font-medium border border-hud-border bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:border-accent/40 transition-colors disabled:opacity-40"
             >
@@ -152,7 +172,7 @@ export function OrientationPanel() {
             </button>
             <button
               type="button"
-              disabled={isRunning}
+              disabled={isDisabled}
               onClick={() => handleQuickSet(0, -90, 0)}
               className="rounded px-2 py-1 text-2xs font-medium border border-hud-border bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:border-accent/40 transition-colors disabled:opacity-40"
             >
@@ -160,7 +180,7 @@ export function OrientationPanel() {
             </button>
             <button
               type="button"
-              disabled={isRunning}
+              disabled={isDisabled}
               onClick={() => handleQuickSet(0, 0, 0)}
               className="rounded px-2 py-1 text-2xs font-medium border border-hud-border bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:border-accent/40 transition-colors disabled:opacity-40"
             >

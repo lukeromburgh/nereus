@@ -17,11 +17,11 @@ import vtkXMLPolyDataReader from "@kitware/vtk.js/IO/XML/XMLPolyDataReader";
 import vtkSTLReader from "@kitware/vtk.js/IO/Geometry/STLReader";
 import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
 import vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
-import vtkPlaneSource from "@kitware/vtk.js/Filters/Sources/PlaneSource";
 import vtkArrowSource from "@kitware/vtk.js/Filters/Sources/ArrowSource";
 import vtkConeSource from "@kitware/vtk.js/Filters/Sources/ConeSource";
 import vtkTubeFilter from "@kitware/vtk.js/Filters/General/TubeFilter";
 import vtkDataArray from "@kitware/vtk.js/Common/Core/DataArray";
+import vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
 import vtkPolyDataNormals from "@kitware/vtk.js/Filters/Core/PolyDataNormals";
 import vtkWindowedSincPolyDataFilter from "@kitware/vtk.js/Filters/General/WindowedSincPolyDataFilter";
 
@@ -37,7 +37,9 @@ interface ActorMap {
   foilSurface?: any;
   pressureLines?: any;
   flowLines?: any;
-  gridPlane?: any;
+  axisX?: any;
+  axisY?: any;
+  axisZ?: any;
   flowArrow?: any;
   noseMarker?: any;
   tailMarker?: any;
@@ -48,6 +50,12 @@ interface ActorMap {
 interface CacheEntry {
   lastUsed: number;
   polyData: any;
+  /** Pristine copy of vertex positions before any orientation rotation. */
+  originalPoints: Float32Array;
+  /** Pristine copy of vertex normals before any orientation rotation. */
+  originalNormals: Float32Array | null;
+  /** Geometric center of the unrotated geometry (rotation pivot). */
+  center: [number, number, number];
 }
 
 // ─── Loaders ─────────────────────────────────────────────────────────────────
@@ -171,23 +179,50 @@ function ensureScalarArray(
 
 // ─── Helper actors ───────────────────────────────────────────────────────────
 
-function buildGridActor(bounds: number[]): any {
+/**
+ * Build coloured world-axis lines (Red=X, Green=Y, Blue=Z) centred on the
+ * foil.  These stay world-fixed so the user always sees the reference frame.
+ */
+function buildAxisLineActors(bounds: number[]): { x: any; y: any; z: any } {
   const chord = Math.max(bounds[1] - bounds[0], 0.01);
-  const plane = vtkPlaneSource.newInstance({
-    xResolution: 20,
-    yResolution: 20,
-  });
-  plane.setOrigin(bounds[0] - chord, bounds[2] - chord, bounds[4]);
-  plane.setPoint1(bounds[1] + chord * 3, bounds[2] - chord, bounds[4]);
-  plane.setPoint2(bounds[0] - chord, bounds[3] + chord, bounds[4]);
-  const mapper = vtkMapper.newInstance();
-  mapper.setInputConnection(plane.getOutputPort());
-  const actor = vtkActor.newInstance();
-  actor.setMapper(mapper);
-  actor.getProperty().setRepresentation(1);
-  actor.getProperty().setColor(0.2, 0.2, 0.3);
-  actor.getProperty().setOpacity(0.4);
-  return actor;
+  const len = chord * 2.5;
+  const cx = (bounds[0] + bounds[1]) / 2;
+  const cy = (bounds[2] + bounds[3]) / 2;
+  const cz = (bounds[4] + bounds[5]) / 2;
+
+  function makeLine(
+    dx: number[], color: [number, number, number],
+  ): any {
+    const pts = new Float32Array([
+      cx - dx[0] * len, cy - dx[1] * len, cz - dx[2] * len,
+      cx + dx[0] * len, cy + dx[1] * len, cz + dx[2] * len,
+    ]);
+    const lineIds = new Uint32Array([2, 0, 1]);
+    const pd = vtkPolyData.newInstance();
+    pd.getPoints().setData(pts, 3);
+    pd.getLines().setData(lineIds);
+    const tube = vtkTubeFilter.newInstance();
+    tube.setInputData(pd);
+    tube.setRadius(chord * 0.004);
+    tube.setNumberOfSides(6);
+    const mapper = vtkMapper.newInstance();
+    mapper.setInputConnection(tube.getOutputPort());
+    const actor = vtkActor.newInstance();
+    actor.setMapper(mapper);
+    actor.getProperty().setColor(...color);
+    actor.getProperty().setAmbient(0.9);
+    actor.getProperty().setDiffuse(0.1);
+    actor.getProperty().setLighting(false);
+    actor.getProperty().setOpacity(0.45);
+    actor.setPickable(false);
+    return actor;
+  }
+
+  return {
+    x: makeLine([1, 0, 0], [0.85, 0.15, 0.15]),
+    y: makeLine([0, 1, 0], [0.15, 0.75, 0.15]),
+    z: makeLine([0, 0, 1], [0.20, 0.40, 0.90]),
+  };
 }
 
 function buildFlowArrowActor(bounds: number[]): any {
@@ -259,6 +294,104 @@ function safeRemoveActor(renderer: any, actor: any) {
   }
 }
 
+// ─── Data-level rotation ─────────────────────────────────────────────────────
+
+const DEG_TO_RAD = Math.PI / 180;
+
+/**
+ * Rotate polyData vertex positions (and normals) in-place from pristine
+ * originals.  This transforms the actual geometry rather than the actor,
+ * so that getBounds(), markers, and gizmos all reflect the true rotated
+ * shape.
+ *
+ * Rotation order: Y(yaw) → X(pitch) → Z(roll) — matches the previous
+ * actor-level convention that the simulation worker also uses.
+ */
+function applyDataRotation(
+  polyData: any,
+  origPts: Float32Array,
+  origNorms: Float32Array | null,
+  cx: number,
+  cy: number,
+  cz: number,
+  pitchDeg: number,
+  rollDeg: number,
+  yawDeg: number,
+) {
+  const pts = polyData.getPoints().getData() as Float32Array;
+  const nPts = origPts.length / 3;
+
+  // Identity — fast path: just copy originals back
+  if (pitchDeg === 0 && rollDeg === 0 && yawDeg === 0) {
+    pts.set(origPts);
+    if (origNorms) {
+      const norms = polyData.getPointData()?.getNormals?.()?.getData?.();
+      if (norms) (norms as Float32Array).set(origNorms);
+    }
+    polyData.getPoints().modified();
+    polyData.modified();
+    return;
+  }
+
+  const yRad = yawDeg * DEG_TO_RAD;
+  const pRad = pitchDeg * DEG_TO_RAD;
+  const rRad = rollDeg * DEG_TO_RAD;
+  const cosY = Math.cos(yRad), sinY = Math.sin(yRad);
+  const cosP = Math.cos(pRad), sinP = Math.sin(pRad);
+  const cosR = Math.cos(rRad), sinR = Math.sin(rRad);
+
+  for (let i = 0; i < nPts; i++) {
+    const idx = i * 3;
+    // Center-relative coordinates
+    const x = origPts[idx] - cx;
+    const y = origPts[idx + 1] - cy;
+    const z = origPts[idx + 2] - cz;
+
+    // Ry(yaw)
+    const x1 = x * cosY + z * sinY;
+    const y1 = y;
+    const z1 = -x * sinY + z * cosY;
+
+    // Rx(pitch)
+    const x2 = x1;
+    const y2 = y1 * cosP - z1 * sinP;
+    const z2 = y1 * sinP + z1 * cosP;
+
+    // Rz(roll)
+    pts[idx]     = x2 * cosR - y2 * sinR + cx;
+    pts[idx + 1] = x2 * sinR + y2 * cosR + cy;
+    pts[idx + 2] = z2 + cz;
+  }
+
+  // Rotate normals (same matrix, no translation)
+  if (origNorms) {
+    const norms = polyData.getPointData()?.getNormals?.()?.getData?.();
+    if (norms) {
+      for (let i = 0; i < nPts; i++) {
+        const idx = i * 3;
+        const nx = origNorms[idx];
+        const ny = origNorms[idx + 1];
+        const nz = origNorms[idx + 2];
+
+        const nx1 = nx * cosY + nz * sinY;
+        const ny1 = ny;
+        const nz1 = -nx * sinY + nz * cosY;
+
+        const nx2 = nx1;
+        const ny2 = ny1 * cosP - nz1 * sinP;
+        const nz2 = ny1 * sinP + nz1 * cosP;
+
+        (norms as Float32Array)[idx]     = nx2 * cosR - ny2 * sinR;
+        (norms as Float32Array)[idx + 1] = nx2 * sinR + ny2 * cosR;
+        (norms as Float32Array)[idx + 2] = nz2;
+      }
+    }
+  }
+
+  polyData.getPoints().modified();
+  polyData.modified();
+}
+
 // ─── Main hook ───────────────────────────────────────────────────────────────
 
 export function useVtkScene(
@@ -274,6 +407,10 @@ export function useVtkScene(
   const genRef = useRef(0);
   // Store the loaded polyData for the foil so coloring can be updated independently
   const foilPolyRef = useRef<any>(null);
+  // Pristine copies of vertex data for data-level rotation
+  const originalPointsRef = useRef<Float32Array | null>(null);
+  const originalNormalsRef = useRef<Float32Array | null>(null);
+  const originalCenterRef = useRef<[number, number, number]>([0, 0, 0]);
 
   // ── Store selectors ──────────────────────────────────────────────────────
   const activeSimId = useSimStore((s) => s.activeSimId);
@@ -397,10 +534,33 @@ export function useVtkScene(
       if (cached) {
         cached.lastUsed = Date.now();
         polyData = cached.polyData;
+        originalPointsRef.current = cached.originalPoints;
+        originalNormalsRef.current = cached.originalNormals;
+        originalCenterRef.current = cached.center;
       } else {
         try {
           polyData = await fetchPolyData(foilUrl);
-          cacheRef.current.set(foilUrl, { lastUsed: Date.now(), polyData });
+          // Save pristine geometry copies before any rotation
+          const rawPts = polyData.getPoints().getData() as Float32Array;
+          const rawNorms = polyData.getPointData()?.getNormals?.()?.getData?.() as Float32Array | undefined;
+          const rawBounds: number[] = polyData.getBounds();
+          const center: [number, number, number] = [
+            (rawBounds[0] + rawBounds[1]) / 2,
+            (rawBounds[2] + rawBounds[3]) / 2,
+            (rawBounds[4] + rawBounds[5]) / 2,
+          ];
+          const origPts = new Float32Array(rawPts);
+          const origNorms = rawNorms ? new Float32Array(rawNorms) : null;
+          cacheRef.current.set(foilUrl, {
+            lastUsed: Date.now(),
+            polyData,
+            originalPoints: origPts,
+            originalNormals: origNorms,
+            center,
+          });
+          originalPointsRef.current = origPts;
+          originalNormalsRef.current = origNorms;
+          originalCenterRef.current = center;
         } catch (err) {
           console.error("[useVtkScene] Failed to load foil:", foilUrl, err);
           return;
@@ -424,7 +584,9 @@ export function useVtkScene(
 
       // ── Remove old foil actor ──────────────────────────────────────
       removeActor("foilSurface");
-      removeActor("gridPlane");
+      removeActor("axisX");
+      removeActor("axisY");
+      removeActor("axisZ");
       removeActor("flowArrow");
       removeActor("noseMarker");
       removeActor("tailMarker");
@@ -434,6 +596,23 @@ export function useVtkScene(
 mapper.setInterpolateScalarsBeforeMapping(true);
       mapper.setInputData(polyData);
       foilPolyRef.current = polyData;
+
+      // ── Apply orientation by rotating geometry data ────────────────
+      // This MUST happen before getBounds() so markers/gizmo reflect the
+      // rotated shape.  Results are already oriented by the solver.
+      const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
+      const isAssetPreview = foilUrl === assetPreviewUrl && !activeFrameUrl && !fallbackUrl;
+      const effectiveP = isAssetPreview ? p : 0;
+      const effectiveR = isAssetPreview ? r : 0;
+      const effectiveY = isAssetPreview ? y : 0;
+
+      if (originalPointsRef.current) {
+        const [ocx, ocy, ocz] = originalCenterRef.current;
+        applyDataRotation(
+          polyData, originalPointsRef.current, originalNormalsRef.current,
+          ocx, ocy, ocz, effectiveP, effectiveR, effectiveY,
+        );
+      }
 
       // Determine scalar coloring — will be refined by Effect 3
       const scalarInfo = ensureScalarArray(polyData);
@@ -471,67 +650,48 @@ mapper.setInterpolateScalarsBeforeMapping(true);
       renderer.addActor(actor);
 
       // ── Bounds-derived helper actors ───────────────────────────────
+      // Rotated bounds — used for gizmo sizing and nose/tail markers
       const bounds: number[] = polyData.getBounds();
       setVtkSceneBounds(
         bounds as [number, number, number, number, number, number],
       );
 
-      const gridActor = buildGridActor(bounds);
-      actorsRef.current.gridPlane = gridActor;
-      renderer.addActor(gridActor);
+      // Original (unrotated) bounds — used for fixed-environment actors
+      // (axis lines, flow arrow) that represent the world reference frame.
+      const origPts = originalPointsRef.current;
+      let origBounds = bounds; // fallback
+      if (origPts) {
+        let xMin = Infinity, xMax = -Infinity;
+        let yMin = Infinity, yMax = -Infinity;
+        let zMin = Infinity, zMax = -Infinity;
+        for (let i = 0; i < origPts.length; i += 3) {
+          const x = origPts[i], y = origPts[i + 1], z = origPts[i + 2];
+          if (x < xMin) xMin = x; if (x > xMax) xMax = x;
+          if (y < yMin) yMin = y; if (y > yMax) yMax = y;
+          if (z < zMin) zMin = z; if (z > zMax) zMax = z;
+        }
+        origBounds = [xMin, xMax, yMin, yMax, zMin, zMax];
+      }
 
-      const arrowActor = buildFlowArrowActor(bounds);
+      // Axis lines & flow arrow use ORIGINAL bounds — fixed reference frame
+      const axisActors = buildAxisLineActors(origBounds);
+      actorsRef.current.axisX = axisActors.x;
+      actorsRef.current.axisY = axisActors.y;
+      actorsRef.current.axisZ = axisActors.z;
+      renderer.addActor(axisActors.x);
+      renderer.addActor(axisActors.y);
+      renderer.addActor(axisActors.z);
+
+      const arrowActor = buildFlowArrowActor(origBounds);
       actorsRef.current.flowArrow = arrowActor;
       renderer.addActor(arrowActor);
 
+      // Nose/tail markers use ROTATED bounds — they track the foil
       const { nose, tail } = buildMarkerActors(bounds);
       actorsRef.current.noseMarker = nose;
       actorsRef.current.tailMarker = tail;
       renderer.addActor(nose);
       renderer.addActor(tail);
-
-      // ── Apply orientation (Three.js → VTK convention fix) ──────────
-      const { pitch: p, yaw: y, roll: r } = useSimStore.getState();
-      
-      // Only apply visual rotation to the base asset preview. Results are already rotated.
-      const isAssetPreview = foilUrl === assetPreviewUrl && !activeFrameUrl && !fallbackUrl;
-      const effectiveP = isAssetPreview ? p : 0;
-      const effectiveY = isAssetPreview ? y : 0;
-      const effectiveR = isAssetPreview ? r : 0;
-
-      // Find geometric center for origin of rotation
-      const cx = (bounds[0] + bounds[1]) / 2;
-      const cy = (bounds[2] + bounds[3]) / 2;
-      const cz = (bounds[4] + bounds[5]) / 2;
-
-      function applyOrientation(
-        actor: any,
-        pitch: number,
-        yaw: number,
-        roll: number,
-      ) {
-        // Set origin to geometric center so it rotates explicitly around itself,
-        // avoiding "flying away/disappearing" artifacts.
-        actor.setOrigin(cx, cy, cz);
-        
-        // Reset orientation (VTK rotations are cumulative)
-        actor.setOrientation(0, 0, 0);
-        // VTK: rotateY (yaw), then rotateX (pitch), then rotateZ (roll)
-        actor.rotateY(yaw);
-        actor.rotateX(pitch);
-        actor.rotateZ(roll);
-      }
-
-      for (const [k, a] of Object.entries(actorsRef.current)) {
-        if (a) {
-          // Do not rotate gridPlane. Do not rotate flowArrow (it must always indicate +X flow direction).
-          if (k === "gridPlane" || k === "flowArrow") {
-             // flow arrow and grid stay world-aligned
-          } else {
-             applyOrientation(a, effectiveP, effectiveY, effectiveR);
-          }
-        }
-      }
 
       // ── Camera fit (on new run / new geometry URL) ──────────────────
       if (!cameraFittedRef.current || loadedRunRef.current !== activeSimId) {
@@ -540,19 +700,15 @@ mapper.setInterpolateScalarsBeforeMapping(true);
         cam.elevation(25);
         cam.azimuth(-35);
 
-        const visibleBounds = renderer.computeVisiblePropBounds();
-        if (visibleBounds && visibleBounds.length === 6) {
-          const diagonal = Math.sqrt(
-            Math.pow(visibleBounds[1] - visibleBounds[0], 2) +
-              Math.pow(visibleBounds[3] - visibleBounds[2], 2) +
-              Math.pow(visibleBounds[5] - visibleBounds[4], 2),
-          );
-          const nearClip = Math.max(diagonal * 0.001, 0.0001);
-          const farClip = Math.max(diagonal * 100, 100);
-          cam.setClippingRange(nearClip, farClip);
-        } else {
-          cam.setClippingRange(0.0001, 100);
-        }
+        const foilBounds = polyData.getBounds();
+        const diagonal = Math.sqrt(
+          Math.pow(foilBounds[1] - foilBounds[0], 2) +
+            Math.pow(foilBounds[3] - foilBounds[2], 2) +
+            Math.pow(foilBounds[5] - foilBounds[4], 2),
+        );
+        const nearClip = Math.max(diagonal * 0.001, 0.0001);
+        const farClip = Math.max(diagonal * 200, 200);
+        cam.setClippingRange(nearClip, farClip);
 
         cameraFittedRef.current = true;
         loadedRunRef.current = activeSimId;
@@ -613,7 +769,10 @@ mapper.setInterpolateScalarsBeforeMapping(true);
         // STL flow-line files are triangle surfaces; piping them through
         // TubeFilter produces empty output whose getPointData() is
         // undefined, which crashes the mapper during render.
-        const hasLines = polyData.getNumberOfLines?.() > 0;
+        // Also verify the raw lines array is non-null to avoid TubeFilter crash.
+        const numLines2 = polyData.getNumberOfLines?.() ?? 0;
+        const linesArr2 = polyData.getLines?.()?.getData?.() ?? null;
+        const hasLines = numLines2 > 0 && linesArr2 !== null && linesArr2.length > 0;
 
         const mapper = vtkMapper.newInstance();
 
@@ -759,7 +918,15 @@ mapper.setInterpolateScalarsBeforeMapping(true);
     const simId = useSimStore.getState().activeSimId;
     if (!simId) return;
 
-    const vtpUrl = `${baseUrl}/media/simulations/${simId}/q_criterion_isosurface.vtp`;
+    const qPath = useSimStore.getState().qCriterionPath;
+    if (!qPath) {
+      console.warn("[useVtkScene] No Q-criterion isosurface available for this run");
+      removeActor("vorticity");
+      render();
+      return;
+    }
+
+    const vtpUrl = `${baseUrl}${qPath}`;
 
     (async () => {
       try {
@@ -873,8 +1040,12 @@ mapper.setInterpolateScalarsBeforeMapping(true);
           return;
         }
 
-        // Skin friction lines are line cells - apply tube filter for visibility
-        const hasLines = polyData.getNumberOfLines?.() > 0;
+        // Skin friction lines are line cells - apply tube filter for visibility.
+        // Guard: TubeFilter crashes if the lines connectivity array is null,
+        // so verify both the count AND the raw array before using it.
+        const numLines = polyData.getNumberOfLines?.() ?? 0;
+        const linesArr = polyData.getLines?.()?.getData?.() ?? null;
+        const hasLines = numLines > 0 && linesArr !== null && linesArr.length > 0;
 
         const mapper = vtkMapper.newInstance();
 
@@ -983,17 +1154,72 @@ mapper.setInterpolateScalarsBeforeMapping(true);
   }, [showPressureMap, colormap, render]);
 
   // ────────────────────────────────────────────────────────────────────────
-  //  EFFECT 4: Orientation changes (apply to existing actors, no reload)
+  //  EFFECT 4: Orientation changes — rotate geometry data, reposition markers
+  //
+  //  Instead of rotating the VTK actor (which doesn't affect getBounds()),
+  //  we rotate the actual vertex positions so that bounds, markers, and
+  //  gizmo rings all reflect the true rotated shape.
   // ────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const orient = [pitch, yaw, roll] as const;
-    for (const [key, actor] of Object.entries(actorsRef.current)) {
-      if (actor && key !== "gridPlane") {
-        actor.setOrientation(orient);
-      }
+    if (!foilPolyRef.current || !originalPointsRef.current) return;
+    const ctx = contextRef.current;
+    if (!ctx) return;
+
+    const isAssetPreview = foilUrl === assetPreviewUrl && !activeFrameUrl && !fallbackUrl;
+    const effectiveP = isAssetPreview ? pitch : 0;
+    const effectiveR = isAssetPreview ? roll : 0;
+    const effectiveY = isAssetPreview ? yaw : 0;
+
+    const polyData = foilPolyRef.current;
+    const [ocx, ocy, ocz] = originalCenterRef.current;
+
+    // Rotate vertex positions + normals from pristine originals
+    applyDataRotation(
+      polyData, originalPointsRef.current, originalNormalsRef.current,
+      ocx, ocy, ocz, effectiveP, effectiveR, effectiveY,
+    );
+
+    // Re-derive bounds & update store (gizmo tracks this)
+    const bounds: number[] = polyData.getBounds();
+    setVtkSceneBounds(
+      bounds as [number, number, number, number, number, number],
+    );
+
+    // Flow arrow stays FIXED — it represents the oncoming flow direction.
+    // The whole point of rotation is to orient the foil relative to this
+    // fixed flow reference.
+
+    // Reposition nose / tail markers to actual rotated extremes
+    const noseActor = actorsRef.current.noseMarker;
+    if (noseActor) {
+      noseActor.setPosition(
+        bounds[0],
+        (bounds[2] + bounds[3]) / 2,
+        (bounds[4] + bounds[5]) / 2,
+      );
     }
+    const tailActor = actorsRef.current.tailMarker;
+    if (tailActor) {
+      tailActor.setPosition(
+        bounds[1],
+        (bounds[2] + bounds[3]) / 2,
+        (bounds[4] + bounds[5]) / 2,
+      );
+    }
+
     render();
-  }, [pitch, yaw, roll, render]);
+  }, [
+    pitch,
+    yaw,
+    roll,
+    render,
+    foilUrl,
+    assetPreviewUrl,
+    activeFrameUrl,
+    fallbackUrl,
+    setVtkSceneBounds,
+    contextRef,
+  ]);
 
   // ────────────────────────────────────────────────────────────────────────
   //  EFFECT 5: Reset camera flag on run change + cache eviction
@@ -1003,6 +1229,9 @@ mapper.setInterpolateScalarsBeforeMapping(true);
   useEffect(() => {
     cameraFittedRef.current = false;
     foilPolyRef.current = null;
+    originalPointsRef.current = null;
+    originalNormalsRef.current = null;
+    originalCenterRef.current = [0, 0, 0];
     clearAllActors();
     for (const [url, entry] of cacheRef.current.entries()) {
       try {
@@ -1019,16 +1248,17 @@ mapper.setInterpolateScalarsBeforeMapping(true);
   //  EFFECT 6: Cleanup on unmount
   // ────────────────────────────────────────────────────────────────────────
   useEffect(() => {
+    const currentCacheRef = cacheRef.current;
     return () => {
       clearAllActors();
-      for (const entry of cacheRef.current.values()) {
+      for (const entry of currentCacheRef.values()) {
         try {
           entry.polyData.delete();
         } catch {
           /* */
         }
       }
-      cacheRef.current.clear();
+      currentCacheRef.clear();
     };
   }, [clearAllActors]);
 }

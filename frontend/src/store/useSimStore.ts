@@ -35,6 +35,7 @@ export type AnalysisPayload = {
   frame_mapping: FrameMappingEntry[];
   metrics_series: MetricsPoint[];
   convergence_series: ConvergencePoint[];
+  q_criterion_isosurface_path?: string | null;
 };
 
 interface SimulationState {
@@ -45,6 +46,7 @@ interface SimulationState {
 
   // Temporal analysis (playback)
   resultSequencePath: string | null;
+  qCriterionPath: string | null;
   frameMapping: FrameMappingEntry[];
   metricsSeries: MetricsPoint[];
   convergenceSeries: ConvergencePoint[];
@@ -160,6 +162,10 @@ interface SimulationState {
     };
   }) => void;
 
+  // Transform gizmo mode
+  gizmoMode: "none" | "translate" | "rotate" | "scale";
+  setGizmoMode: (mode: "none" | "translate" | "rotate" | "scale") => void;
+
   startNewSim: (id: number) => void;
   selectSim: (id: number) => void;
   updateSim: (data: any) => void;
@@ -172,6 +178,7 @@ export const useSimStore = create<SimulationState>((set) => ({
   resultMeshPath: null,
 
   resultSequencePath: null,
+  qCriterionPath: null,
   frameMapping: [],
   metricsSeries: [],
   convergenceSeries: [],
@@ -187,6 +194,7 @@ export const useSimStore = create<SimulationState>((set) => ({
       const totalFrames = frameMapping.length;
       return {
         resultSequencePath: payload.result_sequence_path ?? null,
+        qCriterionPath: payload.q_criterion_isosurface_path ?? null,
         frameMapping,
         metricsSeries: payload.metrics_series || [],
         convergenceSeries: payload.convergence_series || [],
@@ -198,6 +206,7 @@ export const useSimStore = create<SimulationState>((set) => ({
   clearAnalysis: () =>
     set(() => ({
       resultSequencePath: null,
+      qCriterionPath: null,
       frameMapping: [],
       metricsSeries: [],
       convergenceSeries: [],
@@ -289,6 +298,10 @@ export const useSimStore = create<SimulationState>((set) => ({
   showAdvanced: false,
   setShowAdvanced: (show) => set({ showAdvanced: show }),
 
+  // Transform gizmo
+  gizmoMode: "none",
+  setGizmoMode: (mode) => set({ gizmoMode: mode }),
+
   // Orientation correction — degrees (sent as-is in the launch payload)
   pitch: 0,
   roll: 0,
@@ -315,6 +328,7 @@ export const useSimStore = create<SimulationState>((set) => ({
       logs: "Request sent to server...",
       resultMeshPath: null,
       resultSequencePath: null,
+      qCriterionPath: null,
       frameMapping: [],
       metricsSeries: [],
       convergenceSeries: [],
@@ -329,6 +343,7 @@ export const useSimStore = create<SimulationState>((set) => ({
       logs: "Loading run...",
       resultMeshPath: null,
       resultSequencePath: null,
+      qCriterionPath: null,
       frameMapping: [],
       metricsSeries: [],
       convergenceSeries: [],

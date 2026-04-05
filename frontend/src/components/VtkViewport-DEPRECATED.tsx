@@ -10,10 +10,12 @@ import { useSimStore } from "../store/useSimStore";
 import { useVtkRenderer } from "../hooks/useVtkRenderer";
 import { useVtkScene } from "../hooks/useVtkScene";
 import { useVtkPlayback } from "../hooks/useVtkPlayback";
+import { useTransformGizmo } from "../hooks/useTransformGizmo";
 import { MetricHUD } from "./MetricHUD";
 import { LayerManager } from "./LayerManager";
 import { ColorbarLegend } from "./ColorbarLegend";
 import { TimelineController } from "./TimelineController";
+import { GizmoToolbar } from "./GizmoToolbar";
 
 export function VtkViewport() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -35,6 +37,9 @@ export function VtkViewport() {
 
   // ── Scene management ─────────────────────────────────────────────────────
   useVtkScene(vtkContext, contextReady);
+
+  // ── Transform gizmo ─────────────────────────────────────────────────────
+  useTransformGizmo(vtkContext, containerRef, contextReady);
 
   // ── Playback loop ────────────────────────────────────────────────────────
   const renderVtk = useCallback(() => {
@@ -70,6 +75,9 @@ export function VtkViewport() {
       <MetricHUD />
       <LayerManager />
       <ColorbarLegend />
+
+      {/* Transform gizmo toolbar (top center) */}
+      <GizmoToolbar />
 
       {/* Timeline controller (bottom bar) */}
       <div className="absolute left-3 right-3 bottom-3 z-30">

@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.validators import FileExtensionValidator
 
 class Project(models.Model):
     name = models.CharField(max_length=255)
@@ -9,10 +10,33 @@ class Project(models.Model):
     def __str__(self):
         return self.name
 
+class Folder(models.Model):
+    """Hierarchical folder for organising assets within a project."""
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='folders')
+    name = models.CharField(max_length=255)
+    parent = models.ForeignKey(
+        'self', on_delete=models.CASCADE, null=True, blank=True, related_name='children',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
 class HydrofoilAsset(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='assets')
     name = models.CharField(max_length=255)
-    file = models.FileField(upload_to='assets/hydrofoils/')
+    file = models.FileField(
+        upload_to='assets/hydrofoils/',
+        validators=[FileExtensionValidator(allowed_extensions=['stl', 'obj', 'gltf', 'glb'])],
+    )
+    folder = models.ForeignKey(
+        Folder, on_delete=models.SET_NULL, null=True, blank=True, related_name='assets',
+    )
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
