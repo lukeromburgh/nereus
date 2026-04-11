@@ -166,6 +166,7 @@ interface SimulationState {
   gizmoMode: "none" | "translate" | "rotate" | "scale";
   setGizmoMode: (mode: "none" | "translate" | "rotate" | "scale") => void;
 
+  resetForNewRun: () => void;
   startNewSim: (id: number) => void;
   selectSim: (id: number) => void;
   updateSim: (data: any) => void;
@@ -321,6 +322,21 @@ export const useSimStore = create<SimulationState>((set) => ({
       geometryAxesDetected: data.geometry_axes_detected ?? null,
     })),
 
+  resetForNewRun: () =>
+    set({
+      activeSimId: null,
+      status: "IDLE",
+      logs: "",
+      resultMeshPath: null,
+      resultSequencePath: null,
+      qCriterionPath: null,
+      frameMapping: [],
+      metricsSeries: [],
+      convergenceSeries: [],
+      totalFrames: 0,
+      currentFrame: 0,
+      isPlaying: false,
+    }),
   startNewSim: (id) =>
     set({
       activeSimId: id,

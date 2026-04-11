@@ -11,6 +11,19 @@ export default defineConfig({
     },
     dedupe: ["react", "react-dom", "react-router", "react-router-dom"],
   },
+  build: {
+    // Split VTK.js into its own async chunk so it is only fetched when the
+    // simulation page (or any page using the VTK viewport) is reached, rather
+    // than blocking the initial bundle load.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vtk: ["@kitware/vtk.js"],
+          vendor: ["react", "react-dom", "react-router-dom", "zustand"],
+        },
+      },
+    },
+  },
   optimizeDeps: {
     // Pre-bundle vtk.js sub-paths so CJS deps (globalthis, etc.) get
     // converted to ESM.  The Geometry profile registers all OpenGL view-node

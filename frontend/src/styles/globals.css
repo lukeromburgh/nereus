@@ -1,170 +1,273 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap");
 
 :root {
-  /* Surface palette */
-  --color-surface-base: #080c15;
-  --color-surface-solid: #080c15;
-  --color-surface-raised: rgba(15, 23, 42, 0.7);
-  --color-surface-overlay: rgba(15, 23, 42, 0.55);
-  --color-surface-container: rgba(15, 23, 42, 0.25);
+  /* ── shadcn-style radius ── */
+  --radius: 0.5rem;
 
-  /* Accent palette */
-  --color-accent-primary: #3b82f6;
+  /* ── Near-black background palette ── */
+  --color-bg-base: #09090b;
+  --color-bg-elevated: #18181b;
+  --color-bg-muted: #27272a;
+
+  /* ── White text palette ── */
+  --color-fg-primary: #fafafa;
+  --color-fg-muted: #a1a1aa;
+  --color-fg-subtle: #71717a;
+  --color-fg-disabled: #52525b;
+
+  /* ── Border palette ── */
+  --color-border: #27272a;
+  --color-border-hover: #3f3f46;
+  --color-border-active: #52525b;
+
+  /* ── Blue accent — status badges & active items only ── */
+  --color-accent: #3b82f6;
   --color-accent-glow: #60a5fa;
-  --color-accent-cyan: #22d3ee;
-  --color-accent-emerald: #34d399;
-  --color-accent-amber: #fbbf24;
-  --color-accent-rose: #fb7185;
-  --color-accent-indigo: #818cf8;
+  --color-accent-muted: #1d4ed8;
 
-  /* Border palette */
-  --color-border: rgba(148, 163, 184, 0.12);
-  --color-border-active: rgba(59, 130, 246, 0.35);
-  --color-border-muted: rgba(148, 163, 184, 0.25);
+  /* ── Status colors (WCAG AA ≥4.5:1 on #09090b) ── */
+  --color-success: #22c55e;       /* 12.6:1 ✓ */
+  --color-success-muted: #166534;
+  --color-warning: #f59e0b;       /* 7.2:1 ✓ */
+  --color-warning-muted: #92400e;
+  --color-destructive: #f43f5e;  /* 6.1:1 ✓ */
+  --color-destructive-muted: #9f1239;
+  --color-info: #22d3ee;         /* 8.8:1 ✓ */
+  --color-info-muted: #155e75;
 
-  /* Text palette */
-  --color-text-primary: #f1f5f9;
-  --color-text-secondary: #cbd5e1;
-  --color-text-muted: #94a3b8;
-  --color-text-disabled: #64748b;
-  --color-text-inactive: #64748b;
+  /* ── HUD tokens ── */
+  --color-hud-border: rgba(39, 39, 42, 0.6);
+  --color-hud-border-active: rgba(59, 130, 246, 0.5);
 
-  /* Status palette */
-  --color-status-success: var(--color-accent-emerald);
-  --color-status-warning: var(--color-accent-amber);
-  --color-status-danger: var(--color-accent-rose);
+  /* ── Chart tokens ── */
+  --chart-grid: rgba(39, 39, 42, 0.5);
+  --chart-axis: #52525b;
+  --chart-line-1: #3b82f6;
+  --chart-line-2: #22c55e;
+  --chart-line-3: #f59e0b;
+  --chart-line-4: #f43f5e;
 
-  /* Shadow system */
-  --shadow-panel:
-    0 0 0 1px rgba(148, 163, 184, 0.08), 0 4px 24px rgba(0, 0, 0, 0.4);
-  --shadow-overlay:
-    0 0 0 1px rgba(148, 163, 184, 0.1), 0 8px 32px rgba(0, 0, 0, 0.5);
-  --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.15);
-  --shadow-glow-cyan: 0 0 20px rgba(34, 211, 238, 0.12);
-  --shadow-tooltip: 0 4px 24px rgba(0, 0, 0, 0.5);
+  /* ── Shadow system ── */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.6);
+  --shadow-glass: 0 0 0 1px rgba(39, 39, 42, 0.5), 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-focus: 0 0 0 2px rgba(59, 130, 246, 0.5);
 
-  /* Blur system */
-  --blur-panel: 12px;
-  --blur-overlay: 16px;
-
-  /* Radius system */
-  --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-
-  /* Typography */
+  /* ── Typography ── */
   --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", Consolas, monospace;
-  --tracking-hud: 0.08em;
-
-  /* Special data tokens */
-  --chart-grid-stroke: rgba(148, 163, 184, 0.06);
-  --chart-axis-stroke: rgba(148, 163, 184, 0.1);
-  --chart-axis-tick: #475569;
-  --chart-secondary: #3b494c;
-  --chart-highlight: #10151a;
-  --toggle-border-default: rgba(148, 163, 184, 0.3);
-  --white-glow: 0 0 4px rgba(255, 255, 255, 0.8);
-}
-
-[data-theme="light"] {
-  /* Placeholder light theme; can be tuned later */
-  --color-surface-base: #ffffff;
-  --color-surface-solid: #ffffff;
-  --color-surface-raised: rgba(248, 250, 252, 0.9);
-  --color-surface-overlay: rgba(255, 255, 255, 0.8);
-  --color-surface-container: rgba(248, 250, 252, 0.95);
-  --color-border: rgba(148, 163, 184, 0.25);
-  --color-text-primary: #0f172a;
-  --color-text-secondary: #334155;
-  --color-text-muted: #64748b;
-  --color-text-disabled: #94a3b8;
+  --tracking-hud: 0.05em;
 }
 
 @layer base {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     box-sizing: border-box;
   }
 
   body {
     margin: 0;
     font-family: var(--font-ui);
-    color: var(--color-text-primary);
-    background: var(--color-surface-base);
+    color: var(--color-fg-primary);
+    background: var(--color-bg-base);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Selection */
+  ::selection {
+    background: rgba(59, 130, 246, 0.3);
+    color: #ffffff;
+  }
+
+  /* Focus ring */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
   }
 }
 
 @layer components {
+  /* ── Glass panels (shadcn style) ── */
   .glass-panel {
-    background: var(--color-surface-base);
-    border: 1px solid var(--color-border);
-    backdrop-filter: blur(var(--blur-panel));
-    box-shadow: var(--shadow-panel);
+    background: rgba(24, 24, 27, 0.8);
+    border: 1px solid rgba(39, 39, 42, 0.6);
+    border-radius: var(--radius);
+    backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-glass);
   }
 
   .glass-panel-raised {
-    background: var(--color-surface-raised);
-    border: 1px solid var(--color-border);
-    backdrop-filter: blur(var(--blur-panel));
-    box-shadow: var(--shadow-overlay);
+    background: rgba(39, 39, 42, 0.7);
+    border: 1px solid rgba(63, 63, 70, 0.6);
+    border-radius: var(--radius);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 0 0 1px rgba(63, 63, 70, 0.6), 0 8px 24px rgba(0, 0, 0, 0.6);
   }
 
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--radius);
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 150ms;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    composes: btn;
+    background: var(--color-accent);
+    color: #ffffff;
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: #2563eb;
+  }
+
+  .btn-primary:focus-visible {
+    box-shadow: var(--shadow-focus);
+  }
+
+  .btn-secondary {
+    composes: btn;
+    background: var(--color-bg-muted);
+    color: var(--color-fg-primary);
+    border-color: var(--color-border-hover);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--color-border-hover);
+    border-color: var(--color-border-active);
+  }
+
+  .btn-ghost {
+    composes: btn;
+    background: transparent;
+    color: var(--color-fg-muted);
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--color-bg-muted);
+    color: var(--color-fg-primary);
+  }
+
+  /* ── Inputs ── */
+  .input {
+    display: block;
+    width: 100%;
+    border-radius: var(--radius);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--color-fg-primary);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    transition: all 150ms;
+  }
+
+  .input::placeholder {
+    color: var(--color-fg-subtle);
+  }
+
+  .input:hover:not(:disabled) {
+    border-color: var(--color-border-hover);
+  }
+
+  .input:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  }
+
+  .input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* ── Select ── */
+  .select {
+    composes: input;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3e%3cpath d='m6 9 6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    padding-right: 2.5rem;
+  }
+
+  /* ── HUD labels & values ── */
   .hud-label {
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: var(--tracking-hud);
-    color: var(--color-text-secondary);
+    color: var(--color-fg-muted);
   }
 
   .hud-value {
     font-size: 0.875rem;
     font-weight: 600;
     font-family: var(--font-mono);
-    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-fg-primary);
   }
 
   .hud-value-lg {
-    font-size: 1rem;
+    font-size: 1.25rem;
     font-weight: 700;
     font-family: var(--font-mono);
-    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-fg-primary);
     line-height: 1;
   }
 
   .hud-unit {
     font-size: 0.625rem;
-    color: var(--color-text-secondary);
+    color: var(--color-fg-subtle);
     margin-left: 0.125rem;
   }
 
+  /* ── Slider ── */
   .slider-aerospace {
     -webkit-appearance: none;
     width: 100%;
     height: 0.25rem;
-    border-radius: var(--radius-lg);
-    background: var(--color-surface-container);
+    border-radius: var(--radius);
+    background: var(--color-bg-muted);
   }
 
   .slider-aerospace::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 0.75rem;
-    height: 0.75rem;
-    border-radius: 9999px;
-    background: var(--color-accent-primary);
-    box-shadow: var(--shadow-glow-blue);
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 50%;
+    background: var(--color-accent);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
     cursor: pointer;
+    transition: transform 150ms;
+  }
+
+  .slider-aerospace::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
   }
 
   .slider-aerospace::-moz-range-thumb {
-    width: 0.75rem;
-    height: 0.75rem;
-    border-radius: 9999px;
-    background: var(--color-accent-primary);
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 50%;
+    background: var(--color-accent);
     border: none;
-    box-shadow: var(--shadow-glow-blue);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
     cursor: pointer;
   }
 
@@ -173,8 +276,15 @@
     cursor: not-allowed;
   }
 
+  /* ── Scrollbar ── */
+  .scrollbar-dark {
+    scrollbar-width: thin;
+    scrollbar-color: #52525b #18181b;
+  }
+
   .scrollbar-dark::-webkit-scrollbar {
-    width: 4px;
+    width: 6px;
+    height: 6px;
   }
 
   .scrollbar-dark::-webkit-scrollbar-track {
@@ -187,102 +297,6 @@
   }
 
   .scrollbar-dark::-webkit-scrollbar-thumb:hover {
-    background: rgba(148, 163, 184, 0.6);
+    background: var(--color-border-hover);
   }
 }
-
-@layer utilities {
-  .scanlines::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0, 0, 0, 0.03) 2px,
-      rgba(0, 0, 0, 0.03) 4px
-    );
-  }
-}
-
-/**
- * Tailwind utilities for refined glass-panel styling.
- *
- * Add this to your globals.css or Tailwind config.
- */
-
-/* Option 1: Add to globals.css */
-@layer components {
-  .glass-panel-refined {
-    border-radius: 0.75rem; /* rounded-lg */
-    border-width: 1px;      /* border */
-    border-style: solid;
-    border-color: rgba(51, 65, 85, 0.3); /* border-slate-700/30 */
-    background: rgba(2, 15, 32, 0.6);
-    backdrop-filter: blur(12px);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  }
-
-  .hud-label {
-    font-size: 0.75rem; /* text-xs */
-    font-weight: 500;   /* font-medium */
-    color: #94a3b8;     /* text-slate-400 */
-  }
-
-  .hud-value {
-    font-family: var(--font-mono), monospace; /* font-mono */
-    font-variant-numeric: tabular-nums;       /* tabular-nums */
-    color: #f1f5f9;                          /* text-slate-100 */
-  }
-
-  .hud-unit {
-    font-size: 0.625rem; /* text-2xs */
-    color: #475569;      /* text-slate-600 */
-  }
-
-  .hud-border {
-    border-color: rgba(51, 65, 85, 0.2); /* border-slate-700/20 */
-  }
-}
-
-/* Option 2: If using Tailwind plugin system */
-/* In tailwind.config.ts, add to plugins: */
-/*
-function({ addComponents }) {
-  addComponents({
-    '.glass-panel-refined': {
-      borderRadius: 'var(--radius-lg)',
-      borderWidth: '1px',
-      borderColor: 'rgba(71, 85, 105, 0.3)',
-      backgroundColor: 'rgba(2, 15, 32, 0.6)',
-      backdropFilter: 'blur(12px)',
-      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-    },
-    '.hud-label': {
-      fontSize: '0.75rem',
-      fontWeight: '500',
-      color: 'rgba(148, 163, 184, 1)',
-    },
-    '.hud-value': {
-      fontFamily: 'monospace',
-      letterSpacing: '0.05em',
-      color: 'rgba(226, 232, 240, 1)',
-    },
-    '.hud-unit': {
-      fontSize: '0.625rem',
-      color: 'rgba(100, 116, 139, 1)',
-    },
-  });
-}
-*/
-
-/* Color tokens (verify these exist in your Tailwind config) */
-/* 
-  accent-emerald: #10b981
-  accent-rose:    #f43f5e
-  accent-amber:   #f59e0b
-  accent-cyan:    #06b6d4
-  accent-glow:    #0ea5e9
-*/

@@ -217,3 +217,57 @@ class SimulationRunViewSet(viewsets.ModelViewSet):
             # handled client-side; the preview_stl_orientation task runs only
             # inside the simulation worker's pre-flight, not on every upload).
             transaction.on_commit(lambda: celery_app.send_task('tasks.run_hydro_simulation', args=[instance.id]))
+
+    @action(detail=False, methods=['post'])
+    def sweep(self, request):
+        """Create a batch of simulation runs sweeping AoA over a range.
+
+        Expects JSON body:
+        {
+            "aoa_start": -5,
+            "aoa_end": 15,
+            "aoa_step": 1,
+            ... all other SimulationRun fields (velocity, asset, project, etc.)
+        }
+
+        Returns list of created run IDs.
+        """
+        data = request.data.copy()
+        aoa_start = float(data.pop('aoa_start', 0))
+        aoa_end = float(data.pop('aoa_end', 10))
+        aoa_step = float(data.pop('aoa_step', 1))
+
+        if aoa_step <= 0:
+            return Response(
+                {'error': 'aoa_step must be positive'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if aoa_start > aoa_end:
+            return Response(
+                {'error': 'aoa_start must be <= aoa_end'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Limit sweep size to prevent abuse
+        num_steps = int((aoa_end - aoa_start) / aoa_step) + 1
+        if num_steps > 50:
+            return Response(
+                {'error': f'Sweep would create {num_steps} runs (max 50)'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        created_ids = []
+        aoa = aoa_start
+        while aoa <= aoa_end + 1e-9:
+            run_data = data.copy()
+            run_data['angle_of_attack'] = round(aoa, 4)
+            serializer = self.get_serializer(data=run_data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            created_ids.append(serializer.instance.id)
+            aoa += aoa_step
+
+        return Response(
+            {'created_ids': created_ids, 'count': len(created_ids)},
+            status=status.HTTP_201_CREATED,
+        )

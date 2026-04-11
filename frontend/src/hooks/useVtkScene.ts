@@ -225,7 +225,7 @@ function buildAxisLineActors(bounds: number[]): { x: any; y: any; z: any } {
   };
 }
 
-function buildFlowArrowActor(bounds: number[]): any {
+function buildFlowArrowActor(bounds: number[], aoaDeg = 0): any {
   const chord = Math.max(bounds[1] - bounds[0], 0.01);
   const src = vtkArrowSource.newInstance();
   const mapper = vtkMapper.newInstance();
@@ -239,6 +239,11 @@ function buildFlowArrowActor(bounds: number[]): any {
     (bounds[4] + bounds[5]) / 2,
   );
   actor.setScale(chord * 0.8, chord * 0.08, chord * 0.08);
+  // Rotate the arrow to reflect the AoA — positive AoA tilts flow downward
+  // (negative Z rotation since +AoA means flow approaches from below chord)
+  if (Math.abs(aoaDeg) > 0.01) {
+    actor.rotateY(aoaDeg);
+  }
   return actor;
 }
 
@@ -429,6 +434,7 @@ export function useVtkScene(
   const pitch = useSimStore((s) => s.pitch);
   const roll = useSimStore((s) => s.roll);
   const yaw = useSimStore((s) => s.yaw);
+  const aoa = useSimStore((s) => s.aoa);
 
   const setVtkSceneBounds = useSimStore((s) => s.setVtkSceneBounds);
 
@@ -682,7 +688,7 @@ mapper.setInterpolateScalarsBeforeMapping(true);
       renderer.addActor(axisActors.y);
       renderer.addActor(axisActors.z);
 
-      const arrowActor = buildFlowArrowActor(origBounds);
+      const arrowActor = buildFlowArrowActor(origBounds, useSimStore.getState().aoa);
       actorsRef.current.flowArrow = arrowActor;
       renderer.addActor(arrowActor);
 
@@ -1220,6 +1226,41 @@ mapper.setInterpolateScalarsBeforeMapping(true);
     setVtkSceneBounds,
     contextRef,
   ]);
+
+  // ────────────────────────────────────────────────────────────────────────
+  //  EFFECT 4b: Update flow arrow rotation when AoA changes
+  //  Rebuilds the flow arrow actor with the current AoA so the arrow
+  //  visually reflects the actual flow direction in the viewport.
+  // ────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const ctx = contextRef.current;
+    if (!ctx) return;
+
+    const oldArrow = actorsRef.current.flowArrow;
+    if (!oldArrow) return; // arrow not yet created (foil not loaded)
+
+    // Need original bounds to rebuild the arrow at the correct position
+    const origPts = originalPointsRef.current;
+    if (!origPts || origPts.length === 0) return;
+
+    let xMin = Infinity, xMax = -Infinity;
+    let yMin = Infinity, yMax = -Infinity;
+    let zMin = Infinity, zMax = -Infinity;
+    for (let i = 0; i < origPts.length; i += 3) {
+      const x = origPts[i], y = origPts[i + 1], z = origPts[i + 2];
+      if (x < xMin) xMin = x; if (x > xMax) xMax = x;
+      if (y < yMin) yMin = y; if (y > yMax) yMax = y;
+      if (z < zMin) zMin = z; if (z > zMax) zMax = z;
+    }
+    const origBounds = [xMin, xMax, yMin, yMax, zMin, zMax];
+
+    // Remove old arrow and build a new one with the updated AoA
+    safeRemoveActor(ctx.renderer, oldArrow);
+    const newArrow = buildFlowArrowActor(origBounds, aoa);
+    actorsRef.current.flowArrow = newArrow;
+    ctx.renderer.addActor(newArrow);
+    render();
+  }, [aoa, render, contextRef]);
 
   // ────────────────────────────────────────────────────────────────────────
   //  EFFECT 5: Reset camera flag on run change + cache eviction

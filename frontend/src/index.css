@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -16,6 +16,11 @@ body {
 
   .glass-panel-raised {
     @apply bg-surface-raised border border-hud-border backdrop-blur-hud shadow-glass-raised;
+  }
+
+  /* Compact variant used for badge-style overlays */
+  .glass-panel-refined {
+    @apply bg-surface border border-hud-border/60 backdrop-blur-hud shadow-glass;
   }
 
   /* HUD label/unit styling */
@@ -52,20 +57,6 @@ body {
   }
   .slider-aerospace:disabled {
     @apply opacity-40 cursor-not-allowed;
-  }
-
-  /* Scrollbar styling for dark panels */
-  .scrollbar-dark::-webkit-scrollbar {
-    width: 4px;
-  }
-  .scrollbar-dark::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .scrollbar-dark::-webkit-scrollbar-thumb {
-    @apply bg-slate-700/50 rounded-full;
-  }
-  .scrollbar-dark::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-600/60;
   }
 }
 

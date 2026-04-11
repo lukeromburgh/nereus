@@ -1,15 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import {
-  Box,
-  PlayCircle,
-  Circle,
-  Loader2,
-  ChevronRight,
-  Folder as FolderIcon,
-  FolderOpen,
-  FileBox,
-} from "lucide-react";
+import { Box, PlayCircle, Circle, Loader2, ChevronRight, Folder as FolderIcon, FolderOpen, FileBox } from "lucide-react";
 import { useSimStore } from "../store/useSimStore";
 import { assetApi } from "../lib/assetApi";
 import type { Folder, HydrofoilAsset } from "../types/assets";
@@ -24,10 +15,10 @@ type SimulationRun = {
 
 function statusDotColor(status: string) {
   if (status === "RUNNING" || status === "MESHING" || status === "PENDING")
-    return "text-accent-glow";
-  if (status === "COMPLETED") return "text-accent-emerald";
-  if (status === "FAILED") return "text-accent-rose";
-  return "text-slate-600";
+    return "text-status-info";
+  if (status === "COMPLETED") return "text-status-success";
+  if (status === "FAILED") return "text-status-destructive";
+  return "text-foreground-subtle";
 }
 
 function statusDotAnim(status: string) {
@@ -35,8 +26,6 @@ function statusDotAnim(status: string) {
     return "animate-pulse";
   return "";
 }
-
-// ── Recursive folder/asset tree for sidebar ──────────────────────────────────
 
 function AssetItem({
   asset,
@@ -54,12 +43,12 @@ function AssetItem({
       onClick={() => onSelect(asset)}
       className={`text-left w-full flex items-center gap-1.5 py-1.5 rounded-md text-xs transition-all duration-200 ${
         isSelected
-          ? "bg-accent/10 border border-accent/25 text-slate-100"
-          : "border border-transparent hover:bg-white/[0.03] hover:border-hud-border text-slate-400 hover:text-slate-200"
+          ? "bg-accent/10 border border-accent/25 text-foreground"
+          : "border border-transparent hover:bg-background-muted hover:border-border text-foreground-muted hover:text-foreground"
       }`}
       style={{ paddingLeft: `${depth * 12 + 8}px`, paddingRight: 8 }}
     >
-      <FileBox className="h-3 w-3 text-slate-500 flex-shrink-0" />
+      <FileBox className="h-3 w-3 text-foreground-subtle flex-shrink-0" />
       <span className="truncate font-medium">{asset.name}</span>
     </button>
   );
@@ -89,22 +78,20 @@ function FolderNode({
     <div>
       <button
         onClick={() => onToggle(folder.id)}
-        className="text-left w-full flex items-center gap-1.5 py-1.5 rounded-md text-xs text-slate-400 hover:text-slate-200 hover:bg-white/[0.03] transition-all duration-200"
+        className="text-left w-full flex items-center gap-1.5 py-1.5 rounded-md text-xs text-foreground-muted hover:text-foreground hover:bg-background-muted transition-all duration-200"
         style={{ paddingLeft: `${depth * 12 + 8}px`, paddingRight: 8 }}
       >
         <ChevronRight
-          className={`h-3 w-3 text-slate-500 transition-transform flex-shrink-0 ${
-            isOpen ? "rotate-90" : ""
-          }`}
+          className={`h-3 w-3 text-foreground-subtle transition-transform flex-shrink-0 ${isOpen ? "rotate-90" : ""}`}
         />
         {isOpen ? (
-          <FolderOpen className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+          <FolderOpen className="h-3.5 w-3.5 text-status-warning flex-shrink-0" />
         ) : (
-          <FolderIcon className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+          <FolderIcon className="h-3.5 w-3.5 text-status-warning flex-shrink-0" />
         )}
         <span className="truncate font-medium">{folder.name}</span>
         {folder.asset_count > 0 && (
-          <span className="text-2xs text-slate-600 ml-auto font-mono">
+          <span className="text-2xs text-foreground-disabled ml-auto font-mono">
             {folder.asset_count}
           </span>
         )}
@@ -138,22 +125,8 @@ function FolderNode({
   );
 }
 
-// ── Sidebar ──────────────────────────────────────────────────────────────────
-
-interface SidebarProps {
-  refreshNonce: number;
-}
-
-export function Sidebar({ refreshNonce }: SidebarProps) {
-  const {
-    projectId,
-    selectedAssetId,
-    setSelectedAsset,
-    setSelectedAssetId,
-    selectSim,
-    updateSim,
-  } = useSimStore();
-
+export function Sidebar({ refreshNonce }: { refreshNonce: number }) {
+  const { projectId, selectedAssetId, setSelectedAsset, setSelectedAssetId, selectSim, updateSim } = useSimStore();
   const [rootFolders, setRootFolders] = useState<Folder[]>([]);
   const [rootAssets, setRootAssets] = useState<HydrofoilAsset[]>([]);
   const [runs, setRuns] = useState<SimulationRun[]>([]);
@@ -169,7 +142,6 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
     });
   };
 
-  // Collect all assets (flattened) to find selected asset by id
   const allAssets = useMemo(() => {
     const result: HydrofoilAsset[] = [...rootAssets];
     function collect(folders: Folder[]) {
@@ -184,7 +156,6 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
 
   useEffect(() => {
     let cancelled = false;
-
     async function load() {
       setLoading(true);
       try {
@@ -192,22 +163,15 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
           assetApi.getFolderTree(projectId),
           axios.get<SimulationRun[]>("http://localhost:8000/api/runs/"),
         ]);
-
         if (cancelled) return;
-
         setRootFolders(treeResp.data.folders);
         setRootAssets(treeResp.data.assets);
-
         const runsForProject = runsResp.data
           .filter((r) => r.project === projectId)
           .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
         setRuns(runsForProject);
-
-        // Auto-select first asset if none selected
         if (!selectedAssetId) {
-          const firstAsset =
-            treeResp.data.assets[0] ||
-            findFirstAsset(treeResp.data.folders);
+          const firstAsset = treeResp.data.assets[0] || findFirstAsset(treeResp.data.folders);
           if (firstAsset) setSelectedAsset(firstAsset);
         }
       } catch (err) {
@@ -216,11 +180,8 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
         if (!cancelled) setLoading(false);
       }
     }
-
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [projectId, refreshNonce, selectedAssetId, setSelectedAssetId]);
 
   const selectedAsset = useMemo(
@@ -228,16 +189,12 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
     [allAssets, selectedAssetId],
   );
 
-  const handleSelectAsset = (asset: HydrofoilAsset) => {
-    setSelectedAsset(asset);
-  };
+  const handleSelectAsset = (asset: HydrofoilAsset) => setSelectedAsset(asset);
 
   const handleSelectRun = async (runId: number) => {
     selectSim(runId);
     try {
-      const { data } = await axios.get(
-        `http://localhost:8000/api/runs/${runId}/`,
-      );
+      const { data } = await axios.get(`http://localhost:8000/api/runs/${runId}/`);
       updateSim(data);
     } catch (err) {
       console.error("Failed to load run", err);
@@ -248,31 +205,27 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
 
   return (
     <div className="p-3 flex flex-col gap-5 scrollbar-dark">
-      {/* Assets */}
+      {/* Assets section */}
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <Box className="h-3.5 w-3.5 text-accent-cyan" />
+          <Box className="h-3.5 w-3.5 text-foreground-subtle" />
           <span className="hud-label">Assets</span>
         </div>
 
         {selectedAsset && (
           <div className="mb-3 px-2 py-1.5 rounded-md bg-accent/5 border border-accent/15">
-            <div className="text-2xs text-slate-500">Active</div>
-            <div className="text-xs font-medium text-slate-200 truncate">
-              {selectedAsset.name}
-            </div>
+            <div className="text-2xs text-foreground-subtle">Active</div>
+            <div className="text-xs font-medium text-foreground truncate">{selectedAsset.name}</div>
           </div>
         )}
 
         {loading && !hasAnyAssets ? (
-          <div className="flex items-center gap-2 text-2xs text-slate-600">
+          <div className="flex items-center gap-2 text-2xs text-foreground-subtle">
             <Loader2 className="h-3 w-3 animate-spin" />
             Loading…
           </div>
         ) : !hasAnyAssets ? (
-          <div className="text-2xs text-slate-600 px-1">
-            No assets yet. Upload one above.
-          </div>
+          <div className="text-2xs text-foreground-subtle px-1">No assets yet. Upload one above.</div>
         ) : (
           <div className="flex flex-col gap-0.5">
             {rootFolders.map((folder) => (
@@ -299,54 +252,45 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
         )}
       </div>
 
-      {/* Divider */}
-      <div className="h-px bg-hud-border" />
+      <div className="h-px bg-border" />
 
-      {/* Simulation Runs */}
+      {/* Simulation Runs section */}
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <PlayCircle className="h-3.5 w-3.5 text-accent-cyan" />
+          <PlayCircle className="h-3.5 w-3.5 text-foreground-subtle" />
           <span className="hud-label">Runs</span>
           {runs.length > 0 && (
-            <span className="text-2xs text-slate-600 font-mono ml-auto">
-              {runs.length}
-            </span>
+            <span className="text-2xs text-foreground-disabled font-mono ml-auto">{runs.length}</span>
           )}
         </div>
 
         {loading && runs.length === 0 ? (
-          <div className="flex items-center gap-2 text-2xs text-slate-600">
+          <div className="flex items-center gap-2 text-2xs text-foreground-subtle">
             <Loader2 className="h-3 w-3 animate-spin" />
             Loading…
           </div>
         ) : runs.length === 0 ? (
-          <div className="text-2xs text-slate-600 px-1">
-            No simulations yet.
-          </div>
+          <div className="text-2xs text-foreground-subtle px-1">No simulations yet.</div>
         ) : (
           <div className="flex flex-col gap-1">
             {runs.slice(0, 30).map((run) => (
               <button
                 key={run.id}
                 onClick={() => handleSelectRun(run.id)}
-                className="text-left w-full px-2.5 py-2 rounded-md border border-transparent hover:bg-white/[0.03] hover:border-hud-border transition-all duration-200 group"
+                className="text-left w-full px-2.5 py-2 rounded-md border border-transparent hover:bg-background-muted hover:border-border transition-all duration-200 group"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Circle
-                      className={`h-2 w-2 fill-current ${statusDotColor(run.status)} ${statusDotAnim(run.status)}`}
-                    />
-                    <span className="text-xs font-medium text-slate-300 group-hover:text-slate-100">
+                    <Circle className={`h-2 w-2 fill-current ${statusDotColor(run.status)} ${statusDotAnim(run.status)}`} />
+                    <span className="text-xs font-medium text-foreground-muted group-hover:text-foreground">
                       #{run.id}
                     </span>
                   </div>
-                  <span
-                    className={`text-2xs font-medium ${statusDotColor(run.status)}`}
-                  >
+                  <span className={`text-2xs font-medium ${statusDotColor(run.status)}`}>
                     {run.status}
                   </span>
                 </div>
-                <div className="text-2xs text-slate-600 mt-0.5 truncate pl-4">
+                <div className="text-2xs text-foreground-subtle mt-0.5 truncate pl-4">
                   {new Date(run.created_at).toLocaleString(undefined, {
                     month: "short",
                     day: "numeric",
@@ -363,7 +307,6 @@ export function Sidebar({ refreshNonce }: SidebarProps) {
   );
 }
 
-/** Find the first asset in a folder tree (depth-first). */
 function findFirstAsset(folders: Folder[]): HydrofoilAsset | null {
   for (const f of folders) {
     if (f.assets && f.assets.length > 0) return f.assets[0];

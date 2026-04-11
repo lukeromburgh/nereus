@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   Activity,
   FolderOpen,
@@ -6,6 +6,7 @@ import {
   LifeBuoy,
   FileText,
 } from "lucide-react";
+import { useSimStore } from "../store/useSimStore";
 
 const navItems = [
   { key: "simulation", label: "Simulation", to: "/", icon: Activity },
@@ -16,6 +17,8 @@ const navItems = [
 import pkg from "../../package.json";
 
 export default function SideNav() {
+  const navigate = useNavigate();
+  const resetForNewRun = useSimStore((s) => s.resetForNewRun);
   // Read app version from Vite env var `VITE_APP_VERSION` if set.
   // Fallback to `package.json`'s `version` field when the env var isn't provided.
   // Set `VITE_APP_VERSION` in a local `.env` (in `frontend/`) or in Vercel env settings.
@@ -57,7 +60,13 @@ export default function SideNav() {
       </div>
 
       <div className="px-4 pb-6">
-        <button className="w-full bg-accent-cyan text-surface-solid font-bold py-2 rounded-md shadow-sm">
+        <button
+          onClick={() => {
+            resetForNewRun();
+            navigate("/");
+          }}
+          className="w-full bg-accent/90 text-white hover:bg-accent  font-semi-bold py-2 rounded-md shadow-sm"
+        >
           NEW RUN
         </button>
 

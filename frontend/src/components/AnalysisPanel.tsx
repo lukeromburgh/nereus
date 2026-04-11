@@ -200,6 +200,69 @@ const tooltipStyle = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
 };
 
+/** Card showing effective AoA, velocity decomposition, and stall detection */
+function FlowConditionsCard({
+  aoa,
+  velocity,
+  augmentedData,
+}: {
+  aoa: number;
+  velocity: number;
+  augmentedData: Record<string, unknown>[];
+}) {
+  const aoaRad = (aoa * Math.PI) / 180;
+  const ux = velocity * Math.cos(aoaRad);
+  const uz = -velocity * Math.sin(aoaRad);
+
+  // Simple stall detection: check if Cl decreases in the last portion of data
+  const stallWarning = useMemo(() => {
+    if (augmentedData.length < 3) return false;
+    const clValues = augmentedData
+      .map((d) => Number(d.Cl))
+      .filter((v) => Number.isFinite(v));
+    if (clValues.length < 3) return false;
+    // Compare last third average to middle third average
+    const third = Math.max(1, Math.floor(clValues.length / 3));
+    const midAvg =
+      clValues.slice(third, third * 2).reduce((a, b) => a + b, 0) / third;
+    const lastAvg =
+      clValues.slice(-third).reduce((a, b) => a + b, 0) / third;
+    // If last avg is declining while AoA is > 10°, it may indicate stall
+    return aoa > 10 && lastAvg < midAvg * 0.95;
+  }, [augmentedData, aoa]);
+
+  return (
+    <div className="glass-panel rounded-lg p-3 flex flex-col gap-2">
+      <span className="hud-label">Flow Conditions</span>
+      <div className="grid grid-cols-3 gap-2 mt-1">
+        <div className="text-center">
+          <div className="text-2xs text-slate-500">AoA</div>
+          <div className="text-xs font-semibold font-mono text-accent-cyan tabular-nums">
+            {aoa.toFixed(1)}°
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="text-2xs text-slate-500">U<sub>x</sub></div>
+          <div className="text-xs font-semibold font-mono text-slate-300 tabular-nums">
+            {ux.toFixed(2)}
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="text-2xs text-slate-500">U<sub>z</sub></div>
+          <div className="text-xs font-semibold font-mono text-slate-300 tabular-nums">
+            {uz.toFixed(2)}
+          </div>
+        </div>
+      </div>
+      {stallWarning && (
+        <div className="mt-1 px-2 py-1 rounded bg-accent-amber/10 border border-accent-amber/20 text-2xs text-accent-amber text-center">
+          Possible stall — lift coefficient declining at high AoA
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AnalysisPanel() {
   const currentFrame = useSimStore((s) => s.currentFrame);
   const metricsSeries = useSimStore((s) => s.metricsSeries);
@@ -210,6 +273,7 @@ export function AnalysisPanel() {
   const velocity = useSimStore((s) => s.velocity);
   const waterDensity = useSimStore((s) => s.waterDensity);
   const activeSimId = useSimStore((s) => s.activeSimId);
+  const aoa = useSimStore((s) => s.aoa);
 
   const [visibleResiduals, setVisibleResiduals] = useState<
     Record<string, boolean>
@@ -283,6 +347,15 @@ export function AnalysisPanel() {
 
       {/* Orientation auto-correction warning */}
       <OrientationWarningBanner />
+
+      {/* Flow Conditions — effective AoA and velocity decomposition */}
+      {activeSimId && (
+        <FlowConditionsCard
+          aoa={aoa}
+          velocity={velocity}
+          augmentedData={augmentedData as Record<string, unknown>[]}
+        />
+      )}
 
       {/* Telemetry metric cards */}
       <MetricCard

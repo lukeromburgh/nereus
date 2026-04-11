@@ -587,6 +587,7 @@ class TemplateManager:
         first_layer_thickness=1e-4,
         feature_level=4,
         enable_gravity=True,
+        chord_m=None,
     ):
         """
         Generates the initialized OpenFOAM dict structures based on user inputs.
@@ -617,9 +618,9 @@ class TemplateManager:
         # 3. Turbulence BCs (k-omega SST)
         # Compute inlet turbulence quantities from freestream velocity.
         # TI = 5% turbulence intensity (typical for external water flows)
-        # L_turb = 0.07 * L_ref; use a conservative reference length of 0.1m
+        # L_turb = 0.07 * L_ref; use actual chord length when available
         ti = 0.05
-        l_ref = 0.1
+        l_ref = chord_m if chord_m and chord_m > 0 else 0.1
         k_val = 1.5 * (ti * u_mag) ** 2
         omega_val = math.sqrt(k_val) / (0.09 ** 0.25 * 0.07 * l_ref)
         nut_val = k_val / max(omega_val, 1e-10)
