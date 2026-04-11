@@ -87,18 +87,18 @@ export function LogConsoleCompact() {
       {/* ─────────────────────────────────────────────────────────────── */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center justify-between w-full px-4 py-2 hover:bg-slate-900/30 transition-colors cursor-pointer"
+        className="flex items-center justify-between w-full px-3 py-1.5 hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer"
       >
-        <div className="flex items-center gap-2">
-          <span className="text-2xs font-medium text-slate-500 uppercase tracking-wide">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-medium text-[rgba(255,255,255,0.35)] uppercase tracking-[0.1em]">
             Solver Output
           </span>
           {isRunning && (
-            <div className="h-2 w-2 bg-accent-glow rounded-full animate-pulse" />
+            <div className="h-1.5 w-1.5 bg-nereus-accent" style={{ borderRadius: '1px' }} />
           )}
         </div>
         <ChevronUp
-          className={`h-4 w-4 text-slate-600 transition-transform ${
+          className={`h-[14px] w-[14px] text-[rgba(255,255,255,0.25)] transition-transform ${
             isExpanded ? "" : "rotate-180"
           }`}
         />
@@ -106,16 +106,16 @@ export function LogConsoleCompact() {
 
       {/* Progress Bar (Always Visible When Running) */}
       {isRunning && currentEntry && (
-        <div className="px-4 py-2 space-y-1 border-t border-hud-border/30">
+        <div className="px-3 py-1.5 space-y-1 border-t border-[rgba(255,255,255,0.06)]">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-500">{phase}</span>
-            <span className="text-2xs text-slate-600">
+            <span className="text-[11px] text-[rgba(255,255,255,0.4)]">{phase}</span>
+            <span className="text-[10px] text-[rgba(255,255,255,0.25)] font-mono">
               {Math.round(progress * 100)}%
             </span>
           </div>
-          <div className="w-full h-1 bg-slate-700/30 rounded-full overflow-hidden">
+          <div className="w-full h-[1px] bg-[rgba(255,255,255,0.06)] overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-accent-cyan to-accent-glow transition-all duration-300"
+              className="h-full bg-nereus-accent transition-all duration-300"
               style={{ width: `${progress * 100}%` }}
             />
           </div>
@@ -124,21 +124,21 @@ export function LogConsoleCompact() {
 
       {/* Expanded Log View */}
       {isExpanded && (
-        <div className="flex-1 overflow-y-auto scrollbar-dark border-t border-hud-border/30 bg-slate-950/40">
-          <div className="space-y-0 text-2xs font-mono text-slate-400 p-3">
+        <div className="flex-1 overflow-y-auto scrollbar-dark border-t border-[rgba(255,255,255,0.06)] bg-[rgba(10,11,13,0.4)]">
+          <div className="space-y-0 text-[10px] font-mono text-[rgba(255,255,255,0.4)] p-2.5">
             {entries.slice(-30).map((entry, i) => (
               <div
                 key={i}
-                className="flex items-start gap-2 py-0.5 hover:bg-slate-900/20 px-1 rounded"
+                className="flex items-start gap-1.5 py-0.5 hover:bg-[rgba(255,255,255,0.02)] px-1"
               >
-                <span className="text-slate-600 min-w-fit flex-shrink-0">
+                <span className="text-[rgba(255,255,255,0.2)] min-w-fit flex-shrink-0">
                   [{entry.phase}]
                 </span>
-                <span className="flex-1 break-words text-slate-500">
+                <span className="flex-1 break-words text-[rgba(255,255,255,0.35)]">
                   {entry.message}
                 </span>
                 {entry.progress > 0 && entry.progress < 1 && (
-                  <span className="text-right min-w-fit flex-shrink-0 text-slate-600">
+                  <span className="text-right min-w-fit flex-shrink-0 text-[rgba(255,255,255,0.2)]">
                     {Math.round(entry.progress * 100)}%
                   </span>
                 )}

@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400;500&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -6,61 +6,89 @@
 
 body {
   margin: 0;
+  background: #0a0b0d;
 }
 
-/* ── Glassmorphic panel base ── */
 @layer components {
   .glass-panel {
-    @apply bg-surface border border-hud-border backdrop-blur-hud shadow-glass;
+    background: #111318;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 2px;
   }
 
   .glass-panel-raised {
-    @apply bg-surface-raised border border-hud-border backdrop-blur-hud shadow-glass-raised;
+    background: #181c23;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 2px;
   }
 
-  /* Compact variant used for badge-style overlays */
   .glass-panel-refined {
-    @apply bg-surface border border-hud-border/60 backdrop-blur-hud shadow-glass;
+    background: #111318;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 2px;
   }
 
-  /* HUD label/unit styling */
   .hud-label {
-    @apply text-2xs font-medium uppercase tracking-[0.08em] text-slate-500;
+    font-size: 10px;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.35);
   }
 
   .hud-value {
-    @apply text-sm font-semibold tabular-nums text-slate-100 font-mono;
+    font-size: 13px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: rgba(255,255,255,0.9);
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
   }
 
   .hud-value-lg {
-    @apply text-lg font-bold tabular-nums text-slate-50 font-mono leading-none;
+    font-size: 14px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: #00d4ff;
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    line-height: 1;
   }
 
   .hud-unit {
-    @apply text-2xs font-normal text-slate-500 ml-0.5;
+    font-size: 10px;
+    font-weight: 400;
+    color: rgba(255,255,255,0.35);
+    margin-left: 0.125rem;
   }
 
-  /* Custom range slider */
+  /* Nereus slider — 2px track, 10px square thumb */
   .slider-aerospace {
-    @apply appearance-none w-full h-1 bg-slate-800 rounded-full outline-none;
+    @apply appearance-none w-full outline-none cursor-pointer;
+    height: 2px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 0;
   }
   .slider-aerospace::-webkit-slider-thumb {
-    @apply appearance-none w-3 h-3 bg-accent rounded-full cursor-pointer
-           shadow-glow-blue transition-shadow duration-200;
-  }
-  .slider-aerospace::-webkit-slider-thumb:hover {
-    @apply shadow-[0_0_12px_rgba(59,130,246,0.5)];
+    -webkit-appearance: none;
+    width: 10px;
+    height: 10px;
+    background: #00d4ff;
+    border-radius: 1px;
+    cursor: pointer;
+    border: none;
   }
   .slider-aerospace::-moz-range-thumb {
-    @apply w-3 h-3 bg-accent rounded-full cursor-pointer border-0
-           shadow-glow-blue;
+    width: 10px;
+    height: 10px;
+    background: #00d4ff;
+    border-radius: 1px;
+    cursor: pointer;
+    border: none;
   }
   .slider-aerospace:disabled {
     @apply opacity-40 cursor-not-allowed;
   }
 }
 
-/* ── Subtle scanline effect for HUD authenticity ── */
 @layer utilities {
   .scanlines::after {
     content: "";

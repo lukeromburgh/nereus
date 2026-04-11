@@ -70,33 +70,33 @@ export function LogConsole() {
 
   const statusConfig = {
     COMPLETED: {
-      color: "text-accent-emerald",
-      bg: "bg-accent-emerald/15",
-      border: "border-accent-emerald/20",
+      color: "text-nereus-accent",
+      bg: "bg-[rgba(0,212,255,0.08)]",
+      border: "border-[rgba(0,212,255,0.2)]",
       label: "COMPLETED",
     },
     FAILED: {
-      color: "text-accent-rose",
-      bg: "bg-accent-rose/15",
-      border: "border-accent-rose/20",
+      color: "text-nereus-orange",
+      bg: "bg-[rgba(255,107,53,0.08)]",
+      border: "border-[rgba(255,107,53,0.2)]",
       label: "FAILED",
     },
     RUNNING: {
-      color: "text-accent-glow",
-      bg: "bg-accent/15",
-      border: "border-accent/20",
+      color: "text-nereus-accent",
+      bg: "bg-[rgba(0,212,255,0.08)]",
+      border: "border-[rgba(0,212,255,0.2)]",
       label: "RUNNING",
     },
     MESHING: {
-      color: "text-accent-cyan",
-      bg: "bg-accent-cyan/15",
-      border: "border-accent-cyan/20",
+      color: "text-nereus-accent",
+      bg: "bg-[rgba(0,212,255,0.08)]",
+      border: "border-[rgba(0,212,255,0.2)]",
       label: "MESHING",
     },
     PENDING: {
-      color: "text-accent-amber",
-      bg: "bg-accent-amber/15",
-      border: "border-accent-amber/20",
+      color: "text-[rgba(255,255,255,0.45)]",
+      bg: "bg-[rgba(255,255,255,0.04)]",
+      border: "border-[rgba(255,255,255,0.1)]",
       label: "PENDING",
     },
   } as Record<
@@ -105,22 +105,23 @@ export function LogConsole() {
   >;
 
   const sc = statusConfig[status] || {
-    color: "text-slate-500",
-    bg: "bg-slate-800/50",
-    border: "border-slate-700/30",
+    color: "text-[rgba(255,255,255,0.35)]",
+    bg: "bg-[rgba(255,255,255,0.04)]",
+    border: "border-[rgba(255,255,255,0.08)]",
     label: status,
   };
 
   return (
-    <div className="h-full flex flex-col p-3 font-mono text-xs">
+    <div className="h-full flex flex-col p-2.5 font-mono text-[11px]">
       {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <Terminal className="h-3.5 w-3.5 text-slate-500" />
-          <span className="hud-label">Solver Output</span>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1.5">
+          <Terminal className="h-[14px] w-[14px] text-[rgba(255,255,255,0.35)]" />
+          <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">Solver Output</span>
         </div>
         <span
-          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-2xs font-medium border ${sc.bg} ${sc.color} ${sc.border}`}
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium border ${sc.bg} ${sc.color} ${sc.border}`}
+          style={{ borderRadius: '2px' }}
         >
           <Circle
             className={`h-1.5 w-1.5 fill-current ${status === "RUNNING" || status === "MESHING" ? "animate-pulse" : ""}`}
@@ -130,40 +131,41 @@ export function LogConsole() {
       </div>
 
       {/* Content area */}
-      <div className="flex-1 flex gap-3 overflow-hidden">
+      <div className="flex-1 flex gap-2 overflow-hidden">
         {/* Log stream */}
         <div
           ref={scrollerRef}
-          className="flex-1 overflow-y-auto rounded-lg border border-hud-border bg-black/60 p-2.5 whitespace-pre-wrap text-[11px] leading-relaxed text-emerald-400/80 scrollbar-dark"
+          className="flex-1 overflow-y-auto border border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.3)] p-2 whitespace-pre-wrap text-[11px] leading-relaxed text-nereus-accent/80 scrollbar-dark"
+          style={{ borderRadius: '2px' }}
         >
           {logs || "Waiting for simulation to start..."}
         </div>
 
         {/* Metrics sidebar */}
-        <div className="w-[300px] shrink-0 flex flex-col gap-2 overflow-y-auto scrollbar-dark">
+        <div className="w-[300px] shrink-0 flex flex-col gap-1.5 overflow-y-auto scrollbar-dark">
           {/* Residual plot */}
-          <div className="glass-panel rounded-lg p-2.5 flex-1">
-            <div className="flex items-center justify-between mb-2">
-              <span className="hud-label">Residuals</span>
-              <div className="flex items-center gap-3 text-2xs text-slate-500">
+          <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] p-2 flex-1" style={{ borderRadius: '2px' }}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">Residuals</span>
+              <div className="flex items-center gap-3 text-[10px] text-[rgba(255,255,255,0.35)]">
                 <span className="flex items-center gap-1">
                   <span
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: RESIDUAL_COLORS.p }}
+                    className="h-1.5 w-1.5"
+                    style={{ backgroundColor: RESIDUAL_COLORS.p, borderRadius: '1px' }}
                   />
                   p
                 </span>
                 <span className="flex items-center gap-1">
                   <span
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: RESIDUAL_COLORS.Ux }}
+                    className="h-1.5 w-1.5"
+                    style={{ backgroundColor: RESIDUAL_COLORS.Ux, borderRadius: '1px' }}
                   />
                   Ux
                 </span>
               </div>
             </div>
             {pSeries.length + uxSeries.length < 4 ? (
-              <div className="flex items-center justify-center h-20 text-2xs text-slate-600">
+              <div className="flex items-center justify-center h-20 text-[10px] text-[rgba(255,255,255,0.2)]">
                 Awaiting residual data…
               </div>
             ) : (
@@ -181,7 +183,7 @@ export function LogConsole() {
                     y1={plotH * f}
                     x2={plotW}
                     y2={plotH * f}
-                    stroke="rgba(148, 163, 184, 0.06)"
+                    stroke="rgba(255,255,255,0.04)"
                     strokeDasharray="2 4"
                   />
                 ))}
@@ -205,26 +207,27 @@ export function LogConsole() {
           </div>
 
           {/* Download */}
-          <div className="glass-panel rounded-lg p-2.5">
-            <span className="hud-label">Result</span>
+          <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] p-2" style={{ borderRadius: '2px' }}>
+            <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">Result</span>
             {resultUrl ? (
               <a
                 href={resultUrl}
-                className="mt-2 flex items-center justify-center gap-2 w-full rounded-md border border-hud-border bg-white/[0.03] hover:bg-white/[0.06] px-3 py-2 text-xs font-medium text-slate-300 hover:text-slate-100 transition-all duration-200"
+                className="mt-1.5 flex items-center justify-center gap-1.5 w-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] hover:bg-[rgba(255,255,255,0.05)] px-2.5 h-7 text-[11px] font-medium text-[rgba(255,255,255,0.5)] hover:text-[rgba(255,255,255,0.8)] transition-all duration-200"
+                style={{ borderRadius: '2px' }}
                 download
                 target="_blank"
                 rel="noreferrer"
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download className="h-[14px] w-[14px]" />
                 Download Mesh
               </a>
             ) : (
-              <div className="mt-1.5 text-2xs text-slate-600">
+              <div className="mt-1 text-[10px] text-[rgba(255,255,255,0.2)]">
                 No result mesh yet
               </div>
             )}
             {resultMeshPath && (
-              <div className="mt-1.5 text-2xs text-slate-700 break-all font-mono">
+              <div className="mt-1 text-[10px] text-[rgba(255,255,255,0.15)] break-all font-mono">
                 {resultMeshPath}
               </div>
             )}

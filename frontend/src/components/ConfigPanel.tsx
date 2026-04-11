@@ -150,33 +150,33 @@ export function ConfigPanel() {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
-      className="flex flex-col gap-4"
+      className="flex flex-col gap-2"
     >
       {/* Section header */}
-      <div className="flex items-center gap-2">
-        <Settings className="h-4 w-4 text-foreground-muted" />
-        <h2 className="text-sm font-semibold text-foreground font-sans tracking-wide uppercase">
+      <div className="flex items-center gap-1.5">
+        <Settings className="h-[14px] w-[14px] text-[rgba(255,255,255,0.35)]" />
+        <h2 className="text-[10px] font-normal tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">
           Configuration
         </h2>
       </div>
 
       {/* Derived metrics bar */}
-      <div className="grid grid-cols-3 gap-2 rounded-md bg-background-elevated border border-border p-2.5">
+      <div className="grid grid-cols-3 gap-1.5 bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] p-2" style={{ borderRadius: '2px' }}>
         <div className="flex flex-col items-center gap-0.5">
-          <span className="hud-label">Re</span>
-          <span className="text-xs font-semibold tabular-nums text-foreground font-mono">
+          <span className="text-[10px] text-[rgba(255,255,255,0.35)] uppercase">Re</span>
+          <span className="text-[14px] font-medium tabular-nums text-nereus-accent font-mono">
             {formatSI(reynolds)}
           </span>
         </div>
         <div className="flex flex-col items-center gap-0.5">
-          <span className="hud-label">Fr</span>
-          <span className="text-xs font-semibold tabular-nums text-foreground font-mono">
+          <span className="text-[10px] text-[rgba(255,255,255,0.35)] uppercase">Fr</span>
+          <span className="text-[14px] font-medium tabular-nums text-nereus-accent font-mono">
             {froude.toFixed(2)}
           </span>
         </div>
         <div className="flex flex-col items-center gap-0.5">
-          <span className="hud-label">q (Pa)</span>
-          <span className="text-xs font-semibold tabular-nums text-foreground font-mono">
+          <span className="text-[10px] text-[rgba(255,255,255,0.35)] uppercase">q (Pa)</span>
+          <span className="text-[14px] font-medium tabular-nums text-nereus-accent font-mono">
             {formatSI(dynamicPressure)}
           </span>
         </div>
@@ -268,8 +268,8 @@ export function ConfigPanel() {
 
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between">
-            <label className="text-xs font-medium text-foreground-muted">Slice Axis</label>
-            <span className="text-xs font-semibold text-foreground font-mono">
+            <label className="text-[11px] font-medium text-[rgba(255,255,255,0.55)]">Slice Axis</label>
+            <span className="text-[12px] font-medium text-[rgba(255,255,255,0.9)] font-mono">
               {sliceAxis.toUpperCase()}
             </span>
           </div>
@@ -310,10 +310,10 @@ export function ConfigPanel() {
         </FieldWithHint>
 
         <FieldWithHint label="Center of Gravity" hint="X,Y,Z coordinates for center of gravity (m).">
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-3 gap-1">
             {(["X", "Y", "Z"] as const).map((axis, i) => (
               <div key={axis} className="flex flex-col gap-0.5">
-                <span className="text-2xs text-foreground-subtle text-center">{axis}</span>
+                <span className="text-[10px] text-[rgba(255,255,255,0.35)] text-center font-mono">{axis}</span>
                 <input
                   type="number"
                   step={0.01}
@@ -337,13 +337,13 @@ export function ConfigPanel() {
 
       {/* AoA Sweep */}
       <ConfigSection title="AoA Sweep" defaultOpen={sweepMode}>
-        <div className="flex items-center justify-between pb-2">
-          <p className="text-xs text-foreground-subtle">
+        <div className="flex items-center justify-between pb-1.5">
+          <p className="text-[11px] text-[rgba(255,255,255,0.35)]">
             Batch-run across an angle of attack range
           </p>
           <button
             type="button"
-            className="text-2xs text-foreground-muted hover:text-foreground transition-colors"
+            className="text-[10px] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)] transition-colors"
             onClick={() => setSweepMode(!sweepMode)}
           >
             {sweepMode ? "Close" : "Open"}
@@ -351,10 +351,10 @@ export function ConfigPanel() {
         </div>
 
         {sweepMode && (
-          <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-3 gap-2">
+          <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-3 gap-1.5">
               <div className="flex flex-col gap-0.5">
-                <span className="text-2xs text-foreground-subtle">Start (°)</span>
+                <span className="text-[10px] text-[rgba(255,255,255,0.35)]">Start (°)</span>
                 <input
                   type="number"
                   step={0.5}
@@ -365,7 +365,7 @@ export function ConfigPanel() {
                 />
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-2xs text-foreground-subtle">End (°)</span>
+                <span className="text-[10px] text-[rgba(255,255,255,0.35)]">End (°)</span>
                 <input
                   type="number"
                   step={0.5}
@@ -376,7 +376,7 @@ export function ConfigPanel() {
                 />
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-2xs text-foreground-subtle">Step (°)</span>
+                <span className="text-[10px] text-[rgba(255,255,255,0.35)]">Step (°)</span>
                 <input
                   type="number"
                   step={0.5}
@@ -389,7 +389,7 @@ export function ConfigPanel() {
               </div>
             </div>
 
-            <div className="text-2xs text-foreground-muted text-center">
+            <div className="text-[10px] text-[rgba(255,255,255,0.35)] text-center">
               {sweepCount > 0 && sweepCount <= 50
                 ? `${sweepCount} simulation${sweepCount !== 1 ? "s" : ""} will be queued`
                 : sweepCount > 50
@@ -400,14 +400,15 @@ export function ConfigPanel() {
             <button
               onClick={handleRunSweep}
               disabled={!canRun || sweepCount <= 0 || sweepCount > 50 || sweepRunning}
-              className={`group relative overflow-hidden rounded-md py-2 px-3 text-xs font-semibold font-sans transition-all duration-300 ${
+              className={`group relative overflow-hidden py-0 h-8 px-3 text-[12px] font-medium tracking-[0.05em] uppercase transition-all duration-200 ${
                 !canRun || sweepCount <= 0 || sweepCount > 50 || sweepRunning
-                  ? "bg-background-elevated text-foreground-disabled cursor-not-allowed border border-border"
-                  : "bg-accent-cyan/20 text-accent-cyan hover:bg-accent-cyan/30 border border-accent-cyan/30"
+                  ? "bg-nereus-panel text-[rgba(255,255,255,0.2)] cursor-not-allowed border border-[rgba(255,255,255,0.07)]"
+                  : "bg-[rgba(0,212,255,0.15)] text-nereus-accent hover:bg-[rgba(0,212,255,0.25)] border border-[rgba(0,212,255,0.3)]"
               }`}
+              style={{ borderRadius: '2px' }}
             >
-              <span className="relative z-10 flex items-center justify-center gap-2">
-                <Repeat className={`h-3.5 w-3.5 ${sweepRunning ? "animate-spin" : ""}`} />
+              <span className="relative z-10 flex items-center justify-center gap-1.5">
+                <Repeat className={`h-[14px] w-[14px] ${sweepRunning ? "animate-spin" : ""}`} />
                 {sweepRunning ? "Launching…" : "Run AoA Sweep"}
               </span>
             </button>
@@ -419,14 +420,15 @@ export function ConfigPanel() {
       <button
         onClick={handleRunSimulation}
         disabled={!canRun}
-        className={`group relative overflow-hidden rounded-md py-2.5 px-4 text-sm font-semibold font-sans transition-all duration-200 ${
+        className={`group relative overflow-hidden h-8 px-3 text-[12px] font-medium tracking-[0.05em] uppercase transition-all duration-200 ${
           !canRun
-            ? "bg-background-elevated text-foreground-disabled cursor-not-allowed border border-border"
-            : "bg-accent/90 text-white hover:bg-accent border border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            ? "bg-nereus-panel text-[rgba(255,255,255,0.2)] cursor-not-allowed border border-[rgba(255,255,255,0.07)]"
+            : "bg-[#00d4ff] text-[#0a0b0d] hover:bg-[#00bfe8]"
         }`}
+        style={{ borderRadius: '2px' }}
       >
-        <span className="relative z-10 flex items-center justify-center gap-2">
-          <Zap className={`h-4 w-4 ${isRunning ? "animate-pulse" : ""}`} />
+        <span className="relative z-10 flex items-center justify-center gap-1.5">
+          <Zap className={`h-[14px] w-[14px] ${isRunning ? "animate-pulse" : ""}`} />
           {isRunning ? "Computing…" : selectedAssetId ? "Run Simulation" : "Select an Asset"}
         </span>
       </button>

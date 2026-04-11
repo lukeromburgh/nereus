@@ -94,13 +94,13 @@ function TrendIcon({
   trend: "up" | "down" | "flat";
   positiveIsGood: boolean;
 }) {
-  if (trend === "flat") return <Minus className="h-3 w-3 text-slate-600" />;
+  if (trend === "flat") return <Minus className="h-[14px] w-[14px] text-[rgba(255,255,255,0.2)]" />;
   const isGood = (trend === "up") === positiveIsGood;
-  const color = isGood ? "text-accent-emerald" : "text-accent-rose";
+  const color = isGood ? "text-nereus-accent" : "text-nereus-orange";
   return trend === "up" ? (
-    <TrendingUp className={`h-3 w-3 ${color}`} />
+    <TrendingUp className={`h-[14px] w-[14px] ${color}`} />
   ) : (
-    <TrendingDown className={`h-3 w-3 ${color}`} />
+    <TrendingDown className={`h-[14px] w-[14px] ${color}`} />
   );
 }
 
@@ -126,12 +126,12 @@ function MetricRow({
   const trend = useTrend(data, dataKey, currentFrame);
 
   return (
-    <div className="flex items-center gap-2 py-1.5 border-b border-hud-border last:border-0">
+    <div className="flex items-center gap-1.5 py-1 border-b border-[rgba(255,255,255,0.06)] last:border-0">
       <div className="flex-1 min-w-0">
-        <div className="hud-label">{label}</div>
-        <div className="flex items-baseline gap-1 mt-0.5">
-          <span className="hud-value">{value}</span>
-          {unit && <span className="hud-unit">{unit}</span>}
+        <div className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">{label}</div>
+        <div className="flex items-baseline gap-0.5 mt-0.5">
+          <span className="text-[14px] font-medium text-white font-mono tabular-nums">{value}</span>
+          {unit && <span className="text-[10px] text-[rgba(255,255,255,0.35)] font-mono">{unit}</span>}
         </div>
       </div>
       <MiniSparkline
@@ -192,11 +192,11 @@ export function MetricHUD() {
     <>
       {/* ── Telemetry HUD (Top Right) — only when AnalysisPanel is NOT shown ── */}
       {showFullHUD && (
-        <div className="pointer-events-none absolute right-3 top-3 z-20 w-60">
-          <div className="glass-panel rounded-lg p-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className="hud-label">Forces</span>
-              <span className="text-2xs tabular-nums text-slate-600 font-mono">
+        <div className="pointer-events-none absolute right-2.5 top-2.5 z-20 w-56">
+          <div className="bg-[rgba(17,19,24,0.9)] border border-[rgba(255,255,255,0.08)] p-2.5" style={{ borderRadius: '2px' }}>
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">Forces</span>
+              <span className="text-[10px] tabular-nums text-[rgba(255,255,255,0.25)] font-mono">
                 F{currentFrame}/{totalFrames - 1}
               </span>
             </div>
@@ -205,7 +205,7 @@ export function MetricHUD() {
               label="L/D Ratio"
               value={formatNumber(current?.ld_ratio, 3)}
               dataKey="ld_ratio"
-              color="#60a5fa"
+              color="#00d4ff"
               data={augmentedData as Record<string, unknown>[]}
               currentFrame={currentFrame}
               positiveIsGood={true}
@@ -215,7 +215,7 @@ export function MetricHUD() {
               value={formatNumber(current?.Fz, 1)}
               unit="N"
               dataKey="Fz"
-              color="#34d399"
+              color="#00d4ff"
               data={augmentedData as Record<string, unknown>[]}
               currentFrame={currentFrame}
               positiveIsGood={true}
@@ -225,7 +225,7 @@ export function MetricHUD() {
               value={formatNumber(current?.Fx, 1)}
               unit="N"
               dataKey="Fx"
-              color="#fb7185"
+              color="#ff6b35"
               data={augmentedData as Record<string, unknown>[]}
               currentFrame={currentFrame}
               positiveIsGood={false}
@@ -243,24 +243,24 @@ export function MetricHUD() {
           </div>
 
           {/* ── Force Coefficients ── */}
-          <div className="glass-panel rounded-lg p-3 mt-2">
-            <span className="hud-label">Coefficients</span>
-            <div className="grid grid-cols-3 gap-2 mt-2">
+          <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] p-2.5 mt-1.5" style={{ borderRadius: '2px' }}>
+            <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">Coefficients</span>
+            <div className="grid grid-cols-3 gap-1.5 mt-1.5">
               <div className="text-center">
-                <div className="text-2xs text-slate-500">Cl</div>
-                <div className="text-xs font-semibold text-accent-emerald font-mono tabular-nums">
+                <div className="text-[10px] text-[rgba(255,255,255,0.35)]">Cl</div>
+                <div className="text-[12px] font-medium text-nereus-accent font-mono tabular-nums">
                   {formatNumber(current?.Cl, 4)}
                 </div>
               </div>
               <div className="text-center">
-                <div className="text-2xs text-slate-500">Cd</div>
-                <div className="text-xs font-semibold text-accent-rose font-mono tabular-nums">
+                <div className="text-[10px] text-[rgba(255,255,255,0.35)]">Cd</div>
+                <div className="text-[12px] font-medium text-nereus-orange font-mono tabular-nums">
                   {formatNumber(current?.Cd, 4)}
                 </div>
               </div>
               <div className="text-center">
-                <div className="text-2xs text-slate-500">Cs</div>
-                <div className="text-xs font-semibold text-accent-amber font-mono tabular-nums">
+                <div className="text-[10px] text-[rgba(255,255,255,0.35)]">Cs</div>
+                <div className="text-[12px] font-medium text-[#fbbf24] font-mono tabular-nums">
                   {formatNumber(current?.Cs, 4)}
                 </div>
               </div>
@@ -270,11 +270,11 @@ export function MetricHUD() {
       )}
 
       {/* ── L/D Sparkline (Left side, docked below LayerManager) ── */}
-      <div className="pointer-events-none absolute left-3 bottom-16 z-20 w-48">
-        <div className="glass-panel rounded-lg p-2">
-          <div className="flex items-center justify-between px-0.5 pb-1">
-            <span className="hud-label">L/D History</span>
-            <span className="text-2xs text-accent-glow font-mono tabular-nums">
+      <div className="pointer-events-none absolute left-2.5 bottom-14 z-20 w-44">
+        <div className="bg-[rgba(17,19,24,0.9)] border border-[rgba(255,255,255,0.08)] p-1.5" style={{ borderRadius: '2px' }}>
+          <div className="flex items-center justify-between px-0.5 pb-0.5">
+            <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">L/D History</span>
+            <span className="text-[10px] text-nereus-accent font-mono tabular-nums">
               {formatNumber(current?.ld_ratio, 3)}
             </span>
           </div>
@@ -286,8 +286,8 @@ export function MetricHUD() {
               >
                 <defs>
                   <linearGradient id="ldGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.15} />
-                    <stop offset="100%" stopColor="#60a5fa" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#00d4ff" stopOpacity={0.15} />
+                    <stop offset="100%" stopColor="#00d4ff" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis
@@ -299,27 +299,27 @@ export function MetricHUD() {
                 <YAxis hide domain={["auto", "auto"]} />
                 <Tooltip
                   contentStyle={{
-                    background: "rgba(8, 12, 21, 0.95)",
-                    border: "1px solid rgba(148, 163, 184, 0.15)",
-                    borderRadius: "8px",
-                    color: "#e2e8f0",
+                    background: "#111318",
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                    borderRadius: "2px",
+                    color: "rgba(255,255,255,0.8)",
                     fontSize: 11,
-                    backdropFilter: "blur(8px)",
-                    boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
+                    backdropFilter: "none",
+                    boxShadow: "none",
                   }}
                   labelFormatter={(v) => `Frame ${v}`}
                   formatter={(v) => [formatNumber(Number(v), 3), "L/D"]}
                 />
                 <ReferenceLine
                   x={currentFrame}
-                  stroke="#60a5fa"
+                  stroke="#00d4ff"
                   strokeOpacity={0.5}
                   strokeDasharray="2 2"
                 />
                 <Line
                   type="monotone"
                   dataKey="ld_ratio"
-                  stroke="#60a5fa"
+                  stroke="#00d4ff"
                   strokeWidth={1.5}
                   dot={false}
                   isAnimationActive={false}

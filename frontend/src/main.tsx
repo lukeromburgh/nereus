@@ -16,8 +16,8 @@ const RunComparisonPage = React.lazy(() => import("./pages/RunComparisonPage"));
 // AppShell itself is kept synchronously because the shell layout (navbar,
 // sidebar) must be present for first paint.
 const PageFallback = () => (
-  <div className="flex h-screen items-center justify-center bg-slate-950">
-    <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+  <div className="flex h-screen items-center justify-center bg-nereus-base">
+    <div className="h-6 w-6 animate-spin border-2 border-nereus-accent border-t-transparent" style={{ borderRadius: '2px' }} />
   </div>
 );
 

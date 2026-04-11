@@ -37,15 +37,15 @@ export function ColorbarLegend() {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: "easeOut" }}
-      className="pointer-events-none absolute right-3 top-3 z-20"
+      className="pointer-events-none absolute right-2.5 top-2.5 z-20"
     >
       {/* Slim horizontal colorbar, right-anchored */}
-      <div className="glass-panel rounded-lg px-2.5 py-1.5 flex items-center gap-2 whitespace-nowrap">
-        <span className="hud-label shrink-0">Pressure</span>
-        <span className="text-2xs font-mono text-slate-500 tabular-nums shrink-0">
+      <div className="bg-[rgba(17,19,24,0.9)] border border-[rgba(255,255,255,0.08)] px-2 py-1 flex items-center gap-1.5 whitespace-nowrap" style={{ borderRadius: '2px' }}>
+        <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)] shrink-0">Pressure</span>
+        <span className="text-[10px] font-mono text-[rgba(255,255,255,0.35)] tabular-nums shrink-0">
           {minVal.toFixed(0)}
         </span>
-        <div className="relative w-24 h-2.5 rounded-sm overflow-hidden border border-hud-border shrink-0">
+        <div className="relative w-24 h-2 overflow-hidden border border-[rgba(255,255,255,0.08)] shrink-0" style={{ borderRadius: '1px' }}>
           <div
             className="absolute inset-0"
             style={{
@@ -62,11 +62,11 @@ export function ColorbarLegend() {
             />
           )}
         </div>
-        <span className="text-2xs font-mono text-slate-500 tabular-nums shrink-0">
+        <span className="text-[10px] font-mono text-[rgba(255,255,255,0.35)] tabular-nums shrink-0">
           {maxVal.toFixed(0)}
         </span>
         {currentVal != null && (
-          <span className="text-2xs font-mono text-accent-cyan font-semibold tabular-nums shrink-0">
+          <span className="text-[10px] font-mono text-nereus-accent font-medium tabular-nums shrink-0">
             {currentVal.toFixed(0)}N
           </span>
         )}

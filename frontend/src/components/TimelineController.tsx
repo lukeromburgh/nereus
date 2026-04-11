@@ -27,11 +27,12 @@ function ControlButton({
   return (
     <button
       onClick={onClick}
-      className={`h-7 w-7 inline-flex items-center justify-center rounded-md transition-all duration-200 ${
+      className={`h-6 w-6 inline-flex items-center justify-center transition-all duration-200 ${
         active
-          ? "bg-accent/15 border border-accent/30 text-accent-glow shadow-glow-blue"
-          : "bg-white/[0.03] border border-hud-border hover:bg-white/[0.06] hover:border-slate-600 text-slate-400 hover:text-slate-200"
+          ? "bg-[rgba(0,212,255,0.12)] border border-[rgba(0,212,255,0.3)] text-nereus-accent"
+          : "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.08)] hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.15)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)]"
       }`}
+      style={{ borderRadius: '2px' }}
       aria-label={label}
       title={label}
     >
@@ -110,12 +111,12 @@ export function TimelineController() {
   if (totalFrames <= 0) return null;
 
   return (
-    <div className="pointer-events-auto glass-panel rounded-lg px-3 py-2">
-      <div className="flex items-center gap-2">
+    <div className="pointer-events-auto bg-[rgba(17,19,24,0.9)] border border-[rgba(255,255,255,0.08)] px-2.5 py-1.5" style={{ borderRadius: '2px' }}>
+      <div className="flex items-center gap-1.5">
         {/* Transport controls */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <ControlButton onClick={() => stepFrame(-1)} label="Step back">
-            <SkipBack className="h-3.5 w-3.5" />
+            <SkipBack className="h-[14px] w-[14px]" />
           </ControlButton>
 
           <ControlButton
@@ -124,14 +125,14 @@ export function TimelineController() {
             active={isPlaying}
           >
             {isPlaying ? (
-              <Pause className="h-3.5 w-3.5" />
+              <Pause className="h-[14px] w-[14px]" />
             ) : (
-              <Play className="h-3.5 w-3.5 ml-0.5" />
+              <Play className="h-[14px] w-[14px] ml-0.5" />
             )}
           </ControlButton>
 
           <ControlButton onClick={() => stepFrame(1)} label="Step forward">
-            <SkipForward className="h-3.5 w-3.5" />
+            <SkipForward className="h-[14px] w-[14px]" />
           </ControlButton>
 
           <ControlButton
@@ -139,24 +140,25 @@ export function TimelineController() {
             label={loop ? "Loop: On" : "Loop: Off"}
             active={loop}
           >
-            <Repeat className="h-3.5 w-3.5" />
+            <Repeat className="h-[14px] w-[14px]" />
           </ControlButton>
         </div>
 
-        <div className="h-5 w-px bg-slate-700/40" />
+        <div className="h-4 w-px bg-[rgba(255,255,255,0.08)]" />
 
         {/* Speed picker */}
         <div className="relative">
           <button
             onClick={() => setShowSpeedPicker((v) => !v)}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-2xs font-mono text-slate-400 hover:text-slate-200 bg-white/[0.02] border border-hud-border hover:border-slate-600 transition-all"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)] bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.08)] hover:border-[rgba(255,255,255,0.15)] transition-all"
+            style={{ borderRadius: '2px' }}
           >
-            <Gauge className="h-3 w-3" />
+            <Gauge className="h-[14px] w-[14px]" />
             {playbackSpeed}×
           </button>
 
           {showSpeedPicker && (
-            <div className="absolute bottom-full left-0 mb-2 glass-panel-raised rounded-lg p-1.5 flex flex-col gap-0.5 min-w-[60px]">
+            <div className="absolute bottom-full left-0 mb-1.5 bg-nereus-panel border border-[rgba(255,255,255,0.1)] p-1 flex flex-col gap-0.5 min-w-[60px]" style={{ borderRadius: '2px' }}>
               {speedPresets.map((s) => (
                 <button
                   key={s}
@@ -164,11 +166,12 @@ export function TimelineController() {
                     setPlaybackSpeed(s);
                     setShowSpeedPicker(false);
                   }}
-                  className={`px-2 py-1 rounded text-2xs font-mono text-left transition-colors ${
+                  className={`px-1.5 py-0.5 text-[10px] font-mono text-left transition-colors ${
                     s === playbackSpeed
-                      ? "bg-accent/15 text-accent-glow"
-                      : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
+                      ? "bg-[rgba(0,212,255,0.1)] text-nereus-accent"
+                      : "text-[rgba(255,255,255,0.45)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[rgba(255,255,255,0.8)]"
                   }`}
+                  style={{ borderRadius: '2px' }}
                 >
                   {s}×
                 </button>
@@ -189,8 +192,8 @@ export function TimelineController() {
               return (
                 <div
                   key={frame}
-                  className="absolute top-0 h-1.5 w-1.5 rounded-full bg-accent-amber shadow-[0_0_6px_rgba(251,191,36,0.5)]"
-                  style={{ left: `${pct}%`, transform: "translateX(-50%)" }}
+                  className="absolute top-0 h-1.5 w-1.5 bg-[#fbbf24]"
+                  style={{ left: `${pct}%`, transform: "translateX(-50%)", borderRadius: '1px' }}
                   title={`Frame ${frame}`}
                 />
               );
@@ -198,10 +201,10 @@ export function TimelineController() {
           </div>
 
           {/* Track background */}
-          <div className="relative h-1.5 rounded-full bg-slate-800/80 overflow-hidden">
+          <div className="relative h-1 bg-[rgba(255,255,255,0.06)] overflow-hidden" style={{ borderRadius: '1px' }}>
             <div
-              className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-accent/60 to-accent-glow/80 transition-[width] duration-75"
-              style={{ width: `${progress}%` }}
+              className="absolute inset-y-0 left-0 bg-nereus-accent transition-[width] duration-75"
+              style={{ width: `${progress}%`, borderRadius: '1px' }}
             />
           </div>
 
@@ -217,10 +220,10 @@ export function TimelineController() {
         </div>
 
         {/* Frame counter */}
-        <div className="ml-1 flex items-baseline gap-1 text-2xs font-mono tabular-nums">
-          <span className="text-slate-200">{currentFrame}</span>
-          <span className="text-slate-600">/</span>
-          <span className="text-slate-500">{totalFrames - 1}</span>
+        <div className="ml-1 flex items-baseline gap-0.5 text-[10px] font-mono tabular-nums">
+          <span className="text-[rgba(255,255,255,0.7)]">{currentFrame}</span>
+          <span className="text-[rgba(255,255,255,0.2)]">/</span>
+          <span className="text-[rgba(255,255,255,0.35)]">{totalFrames - 1}</span>
         </div>
       </div>
     </div>

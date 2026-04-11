@@ -16,22 +16,22 @@ export default function AppShell() {
 
   return (
     <ToolbarContext.Provider value={{ setToolbarContent }}>
-      <div className="flex h-screen w-screen bg-[#0d1518] text-slate-100 overflow-hidden font-sans">
+      <div className="flex h-screen w-screen bg-nereus-base text-[rgba(255,255,255,0.9)] overflow-hidden font-sans">
         {/* ── Left Sidebar: Main Navigation ──────────────────────────────── */}
         <SideNav />
 
         {/* ── Main Content Area ──────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* ── Top Toolbar: Contextual per-page actions ──────────────── */}
-          <header className="h-11 flex items-center justify-between px-4 border-b border-hud-border bg-surface-solid/90 backdrop-blur-hud flex-shrink-0">
+          <header className="h-10 flex items-center justify-between px-3 border-b border-[rgba(255,255,255,0.06)] bg-nereus-base flex-shrink-0">
             {/* Brand */}
-            <div className="flex items-center gap-3">
-              <Waves className="h-4 w-4 text-accent-cyan animate-wave" />
-              <span className="text-sm font-semibold tracking-wide text-slate-100">
+            <div className="flex items-center gap-2">
+              <Waves className="h-4 w-4 text-nereus-accent" />
+              <span className="text-[11px] font-mono font-medium tracking-[0.15em] uppercase text-[rgba(255,255,255,0.5)]">
                 NEREUS
               </span>
-              <div className="h-4 w-px bg-slate-700/50" />
-              <span className="text-2xs text-slate-500 tracking-wider uppercase">
+              <div className="h-3 w-px bg-[rgba(255,255,255,0.06)]" />
+              <span className="text-[10px] text-[rgba(255,255,255,0.3)] tracking-[0.1em] uppercase">
                 CFD Dashboard
               </span>
             </div>

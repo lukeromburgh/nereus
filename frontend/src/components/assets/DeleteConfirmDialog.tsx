@@ -41,32 +41,32 @@ export default function DeleteConfirmDialog({
         if (e.target === overlayRef.current) onClose();
       }}
     >
-      <div className="bg-[#131e23] border border-hud-border rounded-lg shadow-xl w-full max-w-md p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
+      <div className="bg-nereus-panel border border-[rgba(255,255,255,0.08)] w-full max-w-md p-4" style={{ borderRadius: '2px' }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-[12px] font-medium text-[rgba(255,255,255,0.85)]">{title}</h3>
           <button
             onClick={onClose}
-            className="text-slate-500 hover:text-slate-300 transition-colors"
+            className="text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.6)] transition-colors"
           >
-            <X className="h-4 w-4" />
+            <X className="h-[14px] w-[14px]" />
           </button>
         </div>
 
-        <p className="text-xs text-slate-400 mb-6 leading-relaxed whitespace-pre-line">
+        <p className="text-[11px] text-[rgba(255,255,255,0.5)] mb-5 leading-relaxed whitespace-pre-line">
           {message}
         </p>
 
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 border border-hud-border rounded transition-colors"
+            className="px-2.5 py-1 text-[11px] text-[rgba(255,255,255,0.5)] hover:text-[rgba(255,255,255,0.8)] border border-[rgba(255,255,255,0.08)] transition-colors" style={{ borderRadius: '2px' }}
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={loading}
-            className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-500 rounded transition-colors disabled:opacity-50"
+            className="px-2.5 py-1 text-[11px] font-medium text-white bg-nereus-orange hover:bg-[#ff8355] transition-colors disabled:opacity-50" style={{ borderRadius: '2px' }}
           >
             {loading ? "Deleting..." : confirmLabel}
           </button>

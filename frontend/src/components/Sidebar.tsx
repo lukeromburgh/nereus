@@ -14,11 +14,12 @@ type SimulationRun = {
 };
 
 function statusDotColor(status: string) {
-  if (status === "RUNNING" || status === "MESHING" || status === "PENDING")
-    return "text-status-info";
-  if (status === "COMPLETED") return "text-status-success";
-  if (status === "FAILED") return "text-status-destructive";
-  return "text-foreground-subtle";
+  if (status === "RUNNING" || status === "MESHING")
+    return "text-[#00d4ff]";
+  if (status === "PENDING") return "text-[#f5a623]";
+  if (status === "COMPLETED") return "text-[#34d399]";
+  if (status === "FAILED") return "text-[#ef4444]";
+  return "text-[rgba(255,255,255,0.35)]";
 }
 
 function statusDotAnim(status: string) {
@@ -41,14 +42,14 @@ function AssetItem({
   return (
     <button
       onClick={() => onSelect(asset)}
-      className={`text-left w-full flex items-center gap-1.5 py-1.5 rounded-md text-xs transition-all duration-200 ${
+      className={`text-left w-full flex items-center gap-1.5 py-1 text-[11px] transition-all duration-150 ${
         isSelected
-          ? "bg-accent/10 border border-accent/25 text-foreground"
-          : "border border-transparent hover:bg-background-muted hover:border-border text-foreground-muted hover:text-foreground"
+          ? "bg-[rgba(0,212,255,0.06)] border-l-2 border-nereus-accent text-white"
+          : "border-l-2 border-transparent hover:bg-[rgba(255,255,255,0.03)] text-[rgba(255,255,255,0.5)] hover:text-[rgba(255,255,255,0.8)]"
       }`}
       style={{ paddingLeft: `${depth * 12 + 8}px`, paddingRight: 8 }}
     >
-      <FileBox className="h-3 w-3 text-foreground-subtle flex-shrink-0" />
+      <FileBox className="h-[14px] w-[14px] text-[rgba(255,255,255,0.25)] flex-shrink-0" />
       <span className="truncate font-medium">{asset.name}</span>
     </button>
   );
@@ -78,20 +79,20 @@ function FolderNode({
     <div>
       <button
         onClick={() => onToggle(folder.id)}
-        className="text-left w-full flex items-center gap-1.5 py-1.5 rounded-md text-xs text-foreground-muted hover:text-foreground hover:bg-background-muted transition-all duration-200"
+        className="text-left w-full flex items-center gap-1.5 py-1 text-[11px] text-[rgba(255,255,255,0.5)] hover:text-[rgba(255,255,255,0.8)] hover:bg-[rgba(255,255,255,0.03)] transition-all duration-150"
         style={{ paddingLeft: `${depth * 12 + 8}px`, paddingRight: 8 }}
       >
         <ChevronRight
-          className={`h-3 w-3 text-foreground-subtle transition-transform flex-shrink-0 ${isOpen ? "rotate-90" : ""}`}
+          className={`h-[10px] w-[10px] text-[rgba(255,255,255,0.25)] transition-transform flex-shrink-0 ${isOpen ? "rotate-90" : ""}`}
         />
         {isOpen ? (
-          <FolderOpen className="h-3.5 w-3.5 text-status-warning flex-shrink-0" />
+          <FolderOpen className="h-[14px] w-[14px] text-[#fbbf24] flex-shrink-0" />
         ) : (
-          <FolderIcon className="h-3.5 w-3.5 text-status-warning flex-shrink-0" />
+          <FolderIcon className="h-[14px] w-[14px] text-[#fbbf24] flex-shrink-0" />
         )}
         <span className="truncate font-medium">{folder.name}</span>
         {folder.asset_count > 0 && (
-          <span className="text-2xs text-foreground-disabled ml-auto font-mono">
+          <span className="text-[10px] text-[rgba(255,255,255,0.2)] ml-auto font-mono">
             {folder.asset_count}
           </span>
         )}
@@ -204,28 +205,28 @@ export function Sidebar({ refreshNonce }: { refreshNonce: number }) {
   const hasAnyAssets = rootFolders.length > 0 || rootAssets.length > 0;
 
   return (
-    <div className="p-3 flex flex-col gap-5 scrollbar-dark">
+    <div className="p-2.5 flex flex-col gap-4 scrollbar-dark">
       {/* Assets section */}
       <div>
-        <div className="flex items-center gap-2 mb-3">
-          <Box className="h-3.5 w-3.5 text-foreground-subtle" />
-          <span className="hud-label">Assets</span>
+        <div className="flex items-center gap-1.5 mb-2">
+          <Box className="h-[14px] w-[14px] text-[rgba(255,255,255,0.35)]" />
+          <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">Assets</span>
         </div>
 
         {selectedAsset && (
-          <div className="mb-3 px-2 py-1.5 rounded-md bg-accent/5 border border-accent/15">
-            <div className="text-2xs text-foreground-subtle">Active</div>
-            <div className="text-xs font-medium text-foreground truncate">{selectedAsset.name}</div>
+          <div className="mb-2 px-2 py-1.5 bg-[rgba(0,212,255,0.04)] border border-[rgba(0,212,255,0.12)]" style={{ borderRadius: '2px' }}>
+            <div className="text-[10px] text-[rgba(255,255,255,0.35)]">Active</div>
+            <div className="text-[11px] font-medium text-white truncate">{selectedAsset.name}</div>
           </div>
         )}
 
         {loading && !hasAnyAssets ? (
-          <div className="flex items-center gap-2 text-2xs text-foreground-subtle">
-            <Loader2 className="h-3 w-3 animate-spin" />
+          <div className="flex items-center gap-1.5 text-[10px] text-[rgba(255,255,255,0.35)]">
+            <Loader2 className="h-[14px] w-[14px] animate-spin" />
             Loading…
           </div>
         ) : !hasAnyAssets ? (
-          <div className="text-2xs text-foreground-subtle px-1">No assets yet. Upload one above.</div>
+          <div className="text-[10px] text-[rgba(255,255,255,0.35)] px-1">No assets yet. Upload one above.</div>
         ) : (
           <div className="flex flex-col gap-0.5">
             {rootFolders.map((folder) => (
@@ -252,45 +253,45 @@ export function Sidebar({ refreshNonce }: { refreshNonce: number }) {
         )}
       </div>
 
-      <div className="h-px bg-border" />
+      <div className="h-px bg-[rgba(255,255,255,0.06)]" />
 
       {/* Simulation Runs section */}
       <div>
-        <div className="flex items-center gap-2 mb-3">
-          <PlayCircle className="h-3.5 w-3.5 text-foreground-subtle" />
-          <span className="hud-label">Runs</span>
+        <div className="flex items-center gap-1.5 mb-2">
+          <PlayCircle className="h-[14px] w-[14px] text-[rgba(255,255,255,0.35)]" />
+          <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">Runs</span>
           {runs.length > 0 && (
-            <span className="text-2xs text-foreground-disabled font-mono ml-auto">{runs.length}</span>
+            <span className="text-[10px] text-[rgba(255,255,255,0.2)] font-mono ml-auto">{runs.length}</span>
           )}
         </div>
 
         {loading && runs.length === 0 ? (
-          <div className="flex items-center gap-2 text-2xs text-foreground-subtle">
-            <Loader2 className="h-3 w-3 animate-spin" />
+          <div className="flex items-center gap-1.5 text-[10px] text-[rgba(255,255,255,0.35)]">
+            <Loader2 className="h-[14px] w-[14px] animate-spin" />
             Loading…
           </div>
         ) : runs.length === 0 ? (
-          <div className="text-2xs text-foreground-subtle px-1">No simulations yet.</div>
+          <div className="text-[10px] text-[rgba(255,255,255,0.35)] px-1">No simulations yet.</div>
         ) : (
           <div className="flex flex-col gap-1">
             {runs.slice(0, 30).map((run) => (
               <button
                 key={run.id}
                 onClick={() => handleSelectRun(run.id)}
-                className="text-left w-full px-2.5 py-2 rounded-md border border-transparent hover:bg-background-muted hover:border-border transition-all duration-200 group"
+                className="text-left w-full px-2 py-1.5 border-l-2 border-transparent hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.1)] transition-all duration-150 group"
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Circle className={`h-2 w-2 fill-current ${statusDotColor(run.status)} ${statusDotAnim(run.status)}`} />
-                    <span className="text-xs font-medium text-foreground-muted group-hover:text-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <Circle className={`h-1.5 w-1.5 fill-current ${statusDotColor(run.status)} ${statusDotAnim(run.status)}`} />
+                    <span className="text-[11px] font-medium text-[rgba(255,255,255,0.5)] group-hover:text-white font-mono">
                       #{run.id}
                     </span>
                   </div>
-                  <span className={`text-2xs font-medium ${statusDotColor(run.status)}`}>
+                  <span className={`text-[10px] font-medium font-mono ${statusDotColor(run.status)}`}>
                     {run.status}
                   </span>
                 </div>
-                <div className="text-2xs text-foreground-subtle mt-0.5 truncate pl-4">
+                <div className="text-[10px] text-[rgba(255,255,255,0.25)] mt-0.5 truncate pl-4 font-mono">
                   {new Date(run.created_at).toLocaleString(undefined, {
                     month: "short",
                     day: "numeric",

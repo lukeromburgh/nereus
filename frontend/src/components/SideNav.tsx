@@ -26,16 +26,16 @@ export default function SideNav() {
   const appVersion =
     import.meta.env.VITE_APP_VERSION || pkg.version || "v?.?.?";
   return (
-    <nav className="w-56 h-full flex flex-col justify-between bg-surface-solid text-slate-300 border-r border-hud-border flex-shrink-0">
-      <div className="px-4 pt-6">
-        <div className="mb-6 px-2">
-          <div className="text-xs text-slate-500 uppercase tracking-wider font-medium">
+    <nav className="w-[180px] h-full flex flex-col justify-between bg-[#0d0f14] text-[rgba(255,255,255,0.45)] border-r border-[rgba(255,255,255,0.06)] flex-shrink-0">
+      <div className="px-3 pt-4">
+        <div className="mb-4 px-2">
+          <div className="text-[11px] font-mono tracking-[0.15em] uppercase text-[rgba(255,255,255,0.5)]">
             Solver Engine
           </div>
-          <div className="text-2xs text-slate-400 mt-1">{appVersion}</div>
+          <div className="text-[10px] text-[rgba(255,255,255,0.3)] mt-0.5 font-mono">{appVersion}</div>
         </div>
 
-        <ul className="flex flex-col gap-1">
+        <ul className="flex flex-col gap-0.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -43,15 +43,15 @@ export default function SideNav() {
                 <NavLink
                   to={item.to}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-3 py-3 rounded-r-md ml-2 transition-colors duration-150 hover:bg-surface-container ${
+                    `flex items-center gap-2 px-2 py-2 transition-colors duration-150 ${
                       isActive
-                        ? "bg-accent/5 border-l-2 border-accent-cyan text-accent-cyan"
-                        : "text-slate-400"
+                        ? "border-l-2 border-nereus-accent bg-[rgba(0,212,255,0.06)] text-white"
+                        : "border-l-2 border-transparent text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.03)]"
                     }`
                   }
                 >
-                  <Icon className="h-4 w-4" />
-                  <span className="text-sm font-medium">{item.label}</span>
+                  <Icon className="h-[14px] w-[14px]" />
+                  <span className="text-[12px] font-medium">{item.label}</span>
                 </NavLink>
               </li>
             );
@@ -59,24 +59,25 @@ export default function SideNav() {
         </ul>
       </div>
 
-      <div className="px-4 pb-6">
+      <div className="px-3 pb-4">
         <button
           onClick={() => {
             resetForNewRun();
             navigate("/");
           }}
-          className="w-full bg-accent/90 text-white hover:bg-accent  font-semi-bold py-2 rounded-md shadow-sm"
+          className="w-full bg-[#00d4ff] text-[#0a0b0d] hover:bg-[#00bfe8] font-medium py-0 h-8 text-[12px] tracking-[0.05em] uppercase"
+          style={{ borderRadius: '2px' }}
         >
           NEW RUN
         </button>
 
-        <div className="mt-4 text-2xs text-slate-500 flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <LifeBuoy className="h-3 w-3 text-slate-500" />
+        <div className="mt-3 text-[10px] text-[rgba(255,255,255,0.3)] flex flex-col gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <LifeBuoy className="h-[14px] w-[14px]" />
             <span>Support</span>
           </div>
-          <div className="flex items-center gap-2">
-            <FileText className="h-3 w-3 text-slate-500" />
+          <div className="flex items-center gap-1.5">
+            <FileText className="h-[14px] w-[14px]" />
             <span>System Logs</span>
           </div>
         </div>

@@ -30,17 +30,17 @@ export function LDHistoryChart({
   data,
   currentFrame,
   totalFrames,
-  color = "#60a5fa",
+  color = "#00d4ff",
 }: LDHistoryChartProps) {
   const current = data.find((p) => p.frame_index === currentFrame);
   const ldRatioValue = current ? (current.ld_ratio as number) : null;
 
   return (
-    <div className="glass-panel-refined rounded-lg p-2 flex flex-col gap-2">
+    <div className="bg-[rgba(17,19,24,0.9)] border border-[rgba(255,255,255,0.08)] p-1.5 flex flex-col gap-1.5" style={{ borderRadius: '2px' }}>
       {/* Header */}
       <div className="flex items-center justify-between px-0.5">
-        <span className="hud-label text-slate-400">L/D History</span>
-        <span className="text-2xs text-accent-glow font-mono tabular-nums">
+        <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">L/D History</span>
+        <span className="text-[10px] text-nereus-accent font-mono tabular-nums">
           {formatNumber(ldRatioValue, 3)}
         </span>
       </div>
@@ -67,14 +67,14 @@ export function LDHistoryChart({
             <YAxis hide domain={["auto", "auto"]} />
             <Tooltip
               contentStyle={{
-                background: "rgba(2, 15, 32, 0.95)",
-                border: "1px solid rgba(71, 85, 105, 0.2)",
-                borderRadius: "6px",
-                color: "#e2e8f0",
+                background: "#111318",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                borderRadius: "2px",
+                color: "rgba(255,255,255,0.8)",
                 fontSize: 11,
-                backdropFilter: "blur(8px)",
-                boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
-                padding: "6px 8px",
+                backdropFilter: "none",
+                boxShadow: "none",
+                padding: "4px 6px",
               }}
               labelFormatter={(v) => `Frame ${v}`}
               formatter={(v) => [formatNumber(Number(v), 3), "L/D"]}

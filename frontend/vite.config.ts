@@ -17,9 +17,21 @@ export default defineConfig({
     // than blocking the initial bundle load.
     rollupOptions: {
       output: {
-        manualChunks: {
-          vtk: ["@kitware/vtk.js"],
-          vendor: ["react", "react-dom", "react-router-dom", "zustand"],
+        manualChunks(id) {
+          if (id.includes("@kitware/vtk.js")) {
+            return "vtk";
+          }
+
+          if (
+            id.includes("node_modules/react/") ||
+            id.includes("node_modules/react-dom/") ||
+            id.includes("node_modules/react-router-dom/") ||
+            id.includes("node_modules/zustand/")
+          ) {
+            return "vendor";
+          }
+
+          return undefined;
         },
       },
     },
@@ -49,14 +61,5 @@ export default defineConfig({
       "@kitware/vtk.js/Rendering/Core/Light",
       "@kitware/vtk.js/Common/Core/DataArray",
     ],
-  },
-  test: {
-    // Allow tests to live outside src/ (e.g. ../tests/)
-    include: [
-      "src/**/*.{test,spec}.{ts,tsx}",
-      "../tests/**/*.{test,spec}.ts",
-      "../tests/**/test_*.ts",
-    ],
-    environment: "node",
   },
 });

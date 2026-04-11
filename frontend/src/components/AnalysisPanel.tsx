@@ -65,8 +65,8 @@ function useMetricStats(
 function DeltaBadge({ delta }: { delta: number }) {
   if (Math.abs(delta) < 0.001) {
     return (
-      <span className="inline-flex items-center gap-0.5 text-2xs text-slate-600">
-        <Minus className="h-2.5 w-2.5" />
+      <span className="inline-flex items-center gap-0.5 text-[10px] text-[rgba(255,255,255,0.25)] font-mono">
+        <Minus className="h-[10px] w-[10px]" />
         0.00
       </span>
     );
@@ -74,14 +74,14 @@ function DeltaBadge({ delta }: { delta: number }) {
   const isPositive = delta > 0;
   return (
     <span
-      className={`inline-flex items-center gap-0.5 text-2xs font-medium ${
-        isPositive ? "text-accent-emerald" : "text-accent-rose"
+      className={`inline-flex items-center gap-0.5 text-[10px] font-medium font-mono ${
+        isPositive ? "text-nereus-accent" : "text-nereus-orange"
       }`}
     >
       {isPositive ? (
-        <TrendingUp className="h-2.5 w-2.5" />
+        <TrendingUp className="h-[10px] w-[10px]" />
       ) : (
-        <TrendingDown className="h-2.5 w-2.5" />
+        <TrendingDown className="h-[10px] w-[10px]" />
       )}
       {isPositive ? "+" : ""}
       {delta.toFixed(2)}
@@ -110,16 +110,16 @@ function MetricCard({
   const stats = useMetricStats(data, dataKey, currentFrame);
 
   return (
-    <div className="glass-panel rounded-lg p-3 flex flex-col gap-2">
+    <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] p-2.5 flex flex-col gap-1.5" style={{ borderRadius: '2px' }}>
       {/* Header row */}
       <div className="flex items-start justify-between">
         <div>
-          <div className="hud-label">{label}</div>
-          <div className="flex items-baseline gap-1 mt-1">
-            <span className="hud-value-lg">
+          <div className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">{label}</div>
+          <div className="flex items-baseline gap-1 mt-0.5">
+            <span className="text-[16px] font-medium tabular-nums text-white font-mono">
               {formatNumber(stats.current, digits)}
             </span>
-            {unit && <span className="hud-unit">{unit}</span>}
+            {unit && <span className="text-[10px] text-[rgba(255,255,255,0.35)] font-mono">{unit}</span>}
           </div>
         </div>
         <DeltaBadge delta={stats.delta} />
@@ -166,22 +166,22 @@ function MetricCard({
       </div>
 
       {/* Min / Max / Avg stats row */}
-      <div className="flex items-center justify-between text-2xs text-slate-500 font-mono tabular-nums border-t border-hud-border pt-2">
+      <div className="flex items-center justify-between text-[10px] text-[rgba(255,255,255,0.25)] font-mono tabular-nums border-t border-[rgba(255,255,255,0.06)] pt-1.5">
         <span>
           min{" "}
-          <span className="text-slate-400">
+          <span className="text-[rgba(255,255,255,0.45)]">
             {formatNumber(stats.min, digits)}
           </span>
         </span>
         <span>
           avg{" "}
-          <span className="text-slate-400">
+          <span className="text-[rgba(255,255,255,0.45)]">
             {formatNumber(stats.avg, digits)}
           </span>
         </span>
         <span>
           max{" "}
-          <span className="text-slate-400">
+          <span className="text-[rgba(255,255,255,0.45)]">
             {formatNumber(stats.max, digits)}
           </span>
         </span>
@@ -191,13 +191,13 @@ function MetricCard({
 }
 
 const tooltipStyle = {
-  background: "rgba(8, 12, 21, 0.95)",
-  border: "1px solid rgba(148, 163, 184, 0.15)",
-  borderRadius: "8px",
-  color: "#e2e8f0",
+  background: "#111318",
+  border: "1px solid rgba(255, 255, 255, 0.1)",
+  borderRadius: "2px",
+  color: "rgba(255,255,255,0.8)",
   fontSize: 11,
-  backdropFilter: "blur(8px)",
-  boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
+  backdropFilter: "none",
+  boxShadow: "none",
 };
 
 /** Card showing effective AoA, velocity decomposition, and stall detection */
@@ -232,30 +232,30 @@ function FlowConditionsCard({
   }, [augmentedData, aoa]);
 
   return (
-    <div className="glass-panel rounded-lg p-3 flex flex-col gap-2">
-      <span className="hud-label">Flow Conditions</span>
-      <div className="grid grid-cols-3 gap-2 mt-1">
+    <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] p-2.5 flex flex-col gap-1.5" style={{ borderRadius: '2px' }}>
+      <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">Flow Conditions</span>
+      <div className="grid grid-cols-3 gap-1.5 mt-0.5">
         <div className="text-center">
-          <div className="text-2xs text-slate-500">AoA</div>
-          <div className="text-xs font-semibold font-mono text-accent-cyan tabular-nums">
+          <div className="text-[10px] text-[rgba(255,255,255,0.35)]">AoA</div>
+          <div className="text-[12px] font-medium font-mono text-nereus-accent tabular-nums">
             {aoa.toFixed(1)}°
           </div>
         </div>
         <div className="text-center">
-          <div className="text-2xs text-slate-500">U<sub>x</sub></div>
-          <div className="text-xs font-semibold font-mono text-slate-300 tabular-nums">
+          <div className="text-[10px] text-[rgba(255,255,255,0.35)]">U<sub>x</sub></div>
+          <div className="text-[12px] font-medium font-mono text-[rgba(255,255,255,0.8)] tabular-nums">
             {ux.toFixed(2)}
           </div>
         </div>
         <div className="text-center">
-          <div className="text-2xs text-slate-500">U<sub>z</sub></div>
-          <div className="text-xs font-semibold font-mono text-slate-300 tabular-nums">
+          <div className="text-[10px] text-[rgba(255,255,255,0.35)]">U<sub>z</sub></div>
+          <div className="text-[12px] font-medium font-mono text-[rgba(255,255,255,0.8)] tabular-nums">
             {uz.toFixed(2)}
           </div>
         </div>
       </div>
       {stallWarning && (
-        <div className="mt-1 px-2 py-1 rounded bg-accent-amber/10 border border-accent-amber/20 text-2xs text-accent-amber text-center">
+        <div className="mt-0.5 px-2 py-1 bg-[rgba(255,107,53,0.08)] border border-[rgba(255,107,53,0.2)] text-[10px] text-nereus-orange text-center" style={{ borderRadius: '2px' }}>
           Possible stall — lift coefficient declining at high AoA
         </div>
       )}
@@ -334,13 +334,13 @@ export function AnalysisPanel() {
     <div className="flex flex-col gap-3 scrollbar-dark">
       {/* Section header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-accent-cyan" />
-          <h2 className="text-sm font-semibold text-slate-200 font-sans tracking-wide uppercase">
+        <div className="flex items-center gap-1.5">
+          <Activity className="h-[14px] w-[14px] text-[rgba(255,255,255,0.35)]" />
+          <h2 className="text-[10px] font-normal tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">
             Analysis
           </h2>
         </div>
-        <span className="text-2xs text-slate-600 font-mono tabular-nums">
+        <span className="text-[10px] text-[rgba(255,255,255,0.25)] font-mono tabular-nums">
           F{currentFrame}
         </span>
       </div>
@@ -362,7 +362,7 @@ export function AnalysisPanel() {
         label="L/D Ratio"
         dataKey="ld_ratio"
         digits={3}
-        color="#60a5fa"
+        color="#00d4ff"
         data={augmentedData as Record<string, unknown>[]}
         currentFrame={currentFrame}
       />
@@ -382,7 +382,7 @@ export function AnalysisPanel() {
           unit="N"
           dataKey="Fx"
           digits={1}
-          color="#fb7185"
+          color="#ff6b35"
           data={augmentedData as Record<string, unknown>[]}
           currentFrame={currentFrame}
         />
@@ -399,14 +399,14 @@ export function AnalysisPanel() {
           data={augmentedData as Record<string, unknown>[]}
           currentFrame={currentFrame}
         />
-        <div className="glass-panel rounded-lg p-3 flex flex-col justify-between">
-          <span className="hud-label">Coefficients</span>
-          <div className="mt-2 space-y-1.5">
+        <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] p-2.5 flex flex-col justify-between" style={{ borderRadius: '2px' }}>
+          <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">Coefficients</span>
+          <div className="mt-1.5 space-y-1">
             {(
               [
-                { k: "Cl", color: "text-accent-emerald", label: "Cl (lift)" },
-                { k: "Cd", color: "text-accent-rose", label: "Cd (drag)" },
-                { k: "Cs", color: "text-accent-amber", label: "Cs (side)" },
+                { k: "Cl", color: "text-nereus-accent", label: "Cl (lift)" },
+                { k: "Cd", color: "text-nereus-orange", label: "Cd (drag)" },
+                { k: "Cs", color: "text-[#fbbf24]", label: "Cs (side)" },
               ] as const
             ).map(({ k, color, label }) => {
               const curr = augmentedData.find(
@@ -415,9 +415,9 @@ export function AnalysisPanel() {
               const val = curr?.[k];
               return (
                 <div key={k} className="flex items-baseline justify-between">
-                  <span className="text-2xs text-slate-500">{label}</span>
+                  <span className="text-[10px] text-[rgba(255,255,255,0.35)]">{label}</span>
                   <span
-                    className={`text-xs font-semibold font-mono tabular-nums ${color}`}
+                    className={`text-[12px] font-medium font-mono tabular-nums ${color}`}
                   >
                     {formatNumber(val as number | null, 4)}
                   </span>
@@ -429,25 +429,25 @@ export function AnalysisPanel() {
       </div>
 
       {/* Multi-residual convergence chart */}
-      <div className="glass-panel rounded-lg p-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="hud-label">Convergence</span>
+      <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] p-2.5" style={{ borderRadius: '2px' }}>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">Convergence</span>
           <div className="flex items-center gap-2">
             {RESIDUAL_FIELDS.map((f) => (
               <button
                 key={f}
                 onClick={() => toggleResidual(f)}
-                className={`flex items-center gap-1 text-2xs transition-opacity ${
+                className={`flex items-center gap-1 text-[10px] transition-opacity ${
                   visibleResiduals[f]
                     ? "opacity-100"
                     : "opacity-30 line-through"
                 }`}
               >
                 <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ backgroundColor: RESIDUAL_COLORS[f] }}
+                  className="h-1.5 w-1.5"
+                  style={{ backgroundColor: RESIDUAL_COLORS[f], borderRadius: '1px' }}
                 />
-                <span className="text-slate-400">{f}</span>
+                <span className="text-[rgba(255,255,255,0.45)] font-mono">{f}</span>
               </button>
             ))}
           </div>
@@ -455,7 +455,7 @@ export function AnalysisPanel() {
 
         <div className="h-44" style={{ minWidth: 100 }}>
           {convergenceSeries.length === 0 && residualEntries.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-2xs text-slate-600">
+            <div className="flex items-center justify-center h-full text-[10px] text-[rgba(255,255,255,0.2)]">
               No residual data available
             </div>
           ) : residualEntries.length > 0 ? (
@@ -465,21 +465,21 @@ export function AnalysisPanel() {
                 margin={{ top: 4, right: 8, bottom: 0, left: -8 }}
               >
                 <CartesianGrid
-                  stroke="rgba(148, 163, 184, 0.06)"
+                  stroke="rgba(255,255,255,0.04)"
                   strokeDasharray="2 4"
                   vertical={false}
                 />
                 <XAxis
                   dataKey="iteration"
-                  tick={{ fill: "#475569", fontSize: 9 }}
-                  axisLine={{ stroke: "rgba(148, 163, 184, 0.1)" }}
+                  tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 9 }}
+                  axisLine={{ stroke: "rgba(255,255,255,0.06)" }}
                   tickLine={false}
                 />
                 <YAxis
                   scale="log"
                   domain={["auto", "auto"]}
-                  tick={{ fill: "#475569", fontSize: 9 }}
-                  axisLine={{ stroke: "rgba(148, 163, 184, 0.1)" }}
+                  tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 9 }}
+                  axisLine={{ stroke: "rgba(255,255,255,0.06)" }}
                   tickLine={false}
                   width={40}
                   allowDataOverflow
@@ -515,19 +515,19 @@ export function AnalysisPanel() {
                 margin={{ top: 4, right: 8, bottom: 0, left: -8 }}
               >
                 <CartesianGrid
-                  stroke="rgba(148, 163, 184, 0.06)"
+                  stroke="rgba(255,255,255,0.04)"
                   strokeDasharray="2 4"
                   vertical={false}
                 />
                 <XAxis
                   dataKey="time"
-                  tick={{ fill: "#475569", fontSize: 9 }}
-                  axisLine={{ stroke: "rgba(148, 163, 184, 0.1)" }}
+                  tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 9 }}
+                  axisLine={{ stroke: "rgba(255,255,255,0.06)" }}
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fill: "#475569", fontSize: 9 }}
-                  axisLine={{ stroke: "rgba(148, 163, 184, 0.1)" }}
+                  tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 9 }}
+                  axisLine={{ stroke: "rgba(255,255,255,0.06)" }}
                   tickLine={false}
                   width={36}
                 />
@@ -535,7 +535,7 @@ export function AnalysisPanel() {
                 <Line
                   type="monotone"
                   dataKey="residual"
-                  stroke="#60a5fa"
+                  stroke="#00d4ff"
                   strokeWidth={1.5}
                   dot={false}
                   isAnimationActive={false}
@@ -547,33 +547,36 @@ export function AnalysisPanel() {
       </div>
 
       {/* Export + Download row */}
-      <div className="flex gap-2">
+      <div className="flex gap-1.5">
         {resultUrl && (
           <a
             href={resultUrl}
             download
             target="_blank"
             rel="noreferrer"
-            className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-hud-border bg-white/[0.02] hover:bg-white/[0.05] py-2.5 text-xs font-medium text-slate-400 hover:text-slate-200 transition-all duration-200"
+            className="flex-1 flex items-center justify-center gap-1.5 border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] hover:bg-[rgba(255,255,255,0.05)] h-8 text-[11px] font-medium text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)] transition-all duration-200"
+            style={{ borderRadius: '2px' }}
           >
-            <Download className="h-3.5 w-3.5" />
+            <Download className="h-[14px] w-[14px]" />
             Mesh
           </a>
         )}
         <button
           onClick={handleExportMetrics}
           disabled={augmentedData.length === 0}
-          className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-hud-border bg-white/[0.02] hover:bg-white/[0.05] py-2.5 text-xs font-medium text-slate-400 hover:text-slate-200 transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex-1 flex items-center justify-center gap-1.5 border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] hover:bg-[rgba(255,255,255,0.05)] h-8 text-[11px] font-medium text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)] transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
+          style={{ borderRadius: '2px' }}
         >
-          <FileSpreadsheet className="h-3.5 w-3.5" />
+          <FileSpreadsheet className="h-[14px] w-[14px]" />
           Metrics CSV
         </button>
         <button
           onClick={handleExportConvergence}
           disabled={convergenceSeries.length === 0}
-          className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-hud-border bg-white/[0.02] hover:bg-white/[0.05] py-2.5 text-xs font-medium text-slate-400 hover:text-slate-200 transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex-1 flex items-center justify-center gap-1.5 border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] hover:bg-[rgba(255,255,255,0.05)] h-8 text-[11px] font-medium text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)] transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
+          style={{ borderRadius: '2px' }}
         >
-          <FileSpreadsheet className="h-3.5 w-3.5" />
+          <FileSpreadsheet className="h-[14px] w-[14px]" />
           Residuals CSV
         </button>
       </div>

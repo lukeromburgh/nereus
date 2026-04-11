@@ -2,8 +2,6 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import axios from "axios";
 import { useSimStore } from "../store/useSimStore";
 import { VtkViewport } from "../components/VtkViewport-DEPRECATED";
-import { ColorbarLegend } from "../components/ColorbarLegend";
-import { MetricHUD } from "../components/MetricHUD";
 import { useToolbar } from "../hooks/useToolbar";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -51,13 +49,13 @@ function getPercentChange(a: number, b: number): number {
 }
 
 function formatDelta(val: number, isBetter: boolean) {
-  const color = isBetter ? "text-[#bef500]" : "text-[#ff4d4d]";
+  const color = isBetter ? "text-nereus-accent" : "text-nereus-orange";
   const sign = val > 0 ? "+" : "";
   return <span className={color}>{sign + val.toFixed(3)}</span>;
 }
 
 function formatPercent(val: number, isBetter: boolean) {
-  const color = isBetter ? "text-[#bef500]" : "text-[#ff4d4d]";
+  const color = isBetter ? "text-nereus-accent" : "text-nereus-orange";
   const sign = val > 0 ? "+" : "";
   return <span className={color}>{sign + val.toFixed(1)}%</span>;
 }
@@ -262,11 +260,11 @@ const RunComparisonPage: React.FC = () => {
     setToolbarContent(
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <span className="hud-label text-accent-cyan text-2xs">RUN A</span>
+          <span className="text-[10px] tracking-[0.1em] uppercase text-nereus-accent">RUN A</span>
           <select
             value={runAId ?? ""}
             onChange={(e) => setRunAId(Number(e.target.value) || null)}
-            className="bg-[#181f22] border border-hud-border text-slate-300 rounded-md px-2 py-1 text-xs w-48 focus:outline-none focus:border-accent-cyan transition-colors appearance-none"
+            className="bg-nereus-panel border border-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.7)] px-2 py-1 text-[11px] w-48 focus:outline-none focus:border-[rgba(0,212,255,0.3)] transition-colors appearance-none" style={{ borderRadius: '2px', colorScheme: 'dark' }}
           >
             <option value="">Select Run</option>
             {runs.map((r) => (
@@ -278,11 +276,11 @@ const RunComparisonPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="hud-label text-accent-emerald text-2xs">RUN B</span>
+          <span className="text-[10px] tracking-[0.1em] uppercase text-nereus-orange">RUN B</span>
           <select
             value={runBId ?? ""}
             onChange={(e) => setRunBId(Number(e.target.value) || null)}
-            className="bg-[#181f22] border border-hud-border text-slate-300 rounded-md px-2 py-1 text-xs w-48 focus:outline-none focus:border-accent-emerald transition-colors appearance-none"
+            className="bg-nereus-panel border border-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.7)] px-2 py-1 text-[11px] w-48 focus:outline-none focus:border-[rgba(255,107,53,0.3)] transition-colors appearance-none" style={{ borderRadius: '2px', colorScheme: 'dark' }}
           >
             <option value="">Select Run</option>
             {runs.map((r) => (
@@ -296,11 +294,11 @@ const RunComparisonPage: React.FC = () => {
         <button
           onClick={handleCompare}
           disabled={!canCompare || loading}
-          className={`px-4 py-1 text-xs font-bold rounded-md transition-all duration-200 uppercase tracking-widest ${
+          className={`px-4 py-1.5 text-[11px] font-medium transition-all duration-200 uppercase tracking-[0.1em] border ${
             canCompare && !loading
-              ? "bg-accent-cyan text-[#0d1518] hover:opacity-90 border border-accent-cyan"
-              : "bg-[#181f22] border border-hud-border text-slate-600 cursor-not-allowed"
-          }`}
+              ? "bg-[#00d4ff] text-[#0a0b0d] hover:opacity-90 border-[#00d4ff]"
+              : "bg-[rgba(255,255,255,0.06)] border-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] cursor-not-allowed"
+          }`} style={{ borderRadius: '2px' }}
         >
           {loading ? "Loading…" : "Compare"}
         </button>
@@ -312,35 +310,35 @@ const RunComparisonPage: React.FC = () => {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full bg-[#0d1518] text-slate-300 overflow-y-auto">
-      <main className="flex-1 px-8 py-6 max-w-screen-2xl mx-auto w-full">
+    <div className="flex flex-col h-full bg-nereus-base text-[rgba(255,255,255,0.6)] overflow-y-auto">
+      <main className="flex-1 px-6 py-5 max-w-screen-2xl mx-auto w-full">
 
         {/* ── Section 02: L/D CHART + SYNTHESIS ───────────────────────────── */}
-        <div className="grid grid-cols-12 gap-6 mb-8">
-          <div className="col-span-8 flex flex-col gap-3">
+        <div className="grid grid-cols-12 gap-5 mb-6">
+          <div className="col-span-8 flex flex-col gap-2.5">
             <div className="flex items-center justify-between">
-              <span className="hud-label text-accent-cyan">
+              <span className="text-[10px] tracking-[0.1em] uppercase text-nereus-accent">
                 Lift-to-Drag Ratio (L/D) over Frames
               </span>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5">
-                  <div className="w-6 h-px bg-[#c3f5ff]" />
-                  <span className="text-2xs text-slate-500 font-mono">
+                  <div className="w-6 h-px bg-[#00d4ff]" />
+                  <span className="text-[10px] text-[rgba(255,255,255,0.35)] font-mono">
                     Run A #{runAId ?? "—"}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <div className="w-6 h-px bg-[#bef500]" />
-                  <span className="text-2xs text-slate-500 font-mono">
+                  <div className="w-6 h-px bg-[#ff6b35]" />
+                  <span className="text-[10px] text-[rgba(255,255,255,0.35)] font-mono">
                     Run B #{runBId ?? "—"}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="relative bg-accent/5 border border-hud-border rounded-md h-[240px] w-full overflow-hidden">
+            <div className="relative bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] h-[240px] w-full overflow-hidden" style={{ borderRadius: '2px' }}>
               {!compared ? (
-                <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-600">
+                <div className="absolute inset-0 flex items-center justify-center text-[11px] text-[rgba(255,255,255,0.25)]">
                   Select two runs and click Compare to plot
                 </div>
               ) : (
@@ -371,8 +369,8 @@ const RunComparisonPage: React.FC = () => {
                     height={220}
                     className="absolute left-0 top-0"
                   >
-                    {getLinePath(ldA, "#c3f5ff", 520, 220, allLd)}
-                    {getLinePath(ldB, "#bef500", 520, 220, allLd)}
+                    {getLinePath(ldA, "#00d4ff", 520, 220, allLd)}
+                    {getLinePath(ldB, "#ff6b35", 520, 220, allLd)}
 
                     {/* Hover dots */}
                     {hoverFrame !== null &&
@@ -402,8 +400,8 @@ const RunComparisonPage: React.FC = () => {
                                 cx={px}
                                 cy={pyA}
                                 r={5}
-                                fill="#c3f5ff"
-                                stroke="#10151a"
+                                fill="#00d4ff"
+                                stroke="#0a0b0d"
                                 strokeWidth={2}
                               />
                             )}
@@ -412,8 +410,8 @@ const RunComparisonPage: React.FC = () => {
                                 cx={px}
                                 cy={pyB}
                                 r={5}
-                                fill="#bef500"
-                                stroke="#10151a"
+                                fill="#ff6b35"
+                                stroke="#0a0b0d"
                                 strokeWidth={2}
                               />
                             )}
@@ -454,8 +452,7 @@ const RunComparisonPage: React.FC = () => {
                     (ldA[hoverFrame] !== undefined ||
                       ldB[hoverFrame] !== undefined) && (
                       <div
-                        className="absolute top-2 bg-surface-container border border-hud-border rounded-md px-3 py-2 text-xs pointer-events-none z-10"
-                        style={{
+                        className="absolute top-2 bg-nereus-panel border border-[rgba(255,255,255,0.08)] px-2.5 py-1.5 text-[11px] pointer-events-none z-10" style={{ borderRadius: '2px',
                           left: Math.min(
                             24 +
                               (hoverFrame / Math.max(maxFrames - 1, 1)) *
@@ -465,19 +462,19 @@ const RunComparisonPage: React.FC = () => {
                           ),
                         }}
                       >
-                        <div className="hud-label text-slate-500 mb-1">
+                        <div className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)] mb-1">
                           Frame {hoverFrame + 1}
                         </div>
                         <div className="flex flex-col gap-0.5">
                           <span>
                             A:{" "}
-                            <span className="font-mono text-[#c3f5ff]">
+                            <span className="font-mono text-[#00d4ff]">
                               {ldA[hoverFrame]?.toFixed(3) ?? "—"}
                             </span>
                           </span>
                           <span>
                             B:{" "}
-                            <span className="font-mono text-[#bef500]">
+                            <span className="font-mono text-[#ff6b35]">
                               {ldB[hoverFrame]?.toFixed(3) ?? "—"}
                             </span>
                           </span>
@@ -488,8 +485,8 @@ const RunComparisonPage: React.FC = () => {
                                 <span
                                   className={`font-mono ${
                                     ldB[hoverFrame] > ldA[hoverFrame]
-                                      ? "text-[#bef500]"
-                                      : "text-[#ff4d4d]"
+                                      ? "text-nereus-accent"
+                                      : "text-nereus-orange"
                                   }`}
                                 >
                                   {(ldB[hoverFrame] - ldA[hoverFrame] > 0
@@ -507,8 +504,8 @@ const RunComparisonPage: React.FC = () => {
 
                   {/* X axis labels */}
                   <div className="absolute bottom-1 left-6 right-6 flex justify-between">
-                    <span className="text-2xs font-mono text-slate-600">0</span>
-                    <span className="text-2xs font-mono text-slate-600">
+                    <span className="text-[10px] font-mono text-[rgba(255,255,255,0.25)]">0</span>
+                    <span className="text-[10px] font-mono text-[rgba(255,255,255,0.25)]">
                       {maxFrames}
                     </span>
                   </div>
@@ -519,30 +516,30 @@ const RunComparisonPage: React.FC = () => {
 
           {/* Synthesis card */}
           <div className="col-span-4">
-            <div className="bg-accent/5 border border-hud-border rounded-md p-5 h-full flex flex-col gap-3">
-              <div className="hud-label text-accent-emerald border-l-2 border-accent-emerald pl-2">
+            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] p-4 h-full flex flex-col gap-2.5" style={{ borderRadius: '2px' }}>
+              <div className="text-[10px] tracking-[0.1em] uppercase text-nereus-orange border-l-2 border-nereus-orange pl-2">
                 Model Synthesis
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-[11px] text-[rgba(255,255,255,0.5)] leading-relaxed">
                 {compared && metricsA && metricsB
                   ? getSynthesisNote(metricsA, metricsB)
                   : "Select two runs and compare to see summary."}
               </p>
               {compared && metricsA && metricsB && (
-                <div className="mt-auto flex flex-col gap-2 pt-3 border-t border-hud-border">
+                <div className="mt-auto flex flex-col gap-1.5 pt-2.5 border-t border-[rgba(255,255,255,0.06)]">
                   <div className="flex justify-between items-center">
-                    <span className="text-2xs text-slate-600 uppercase font-bold tracking-widest">
+                    <span className="text-[10px] text-[rgba(255,255,255,0.25)] uppercase font-medium tracking-[0.1em]">
                       Mean L/D — A
                     </span>
-                    <span className="font-mono text-xs text-[#c3f5ff]">
+                    <span className="font-mono text-[11px] text-[#00d4ff]">
                       {getMean(ldA).toFixed(3)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-2xs text-slate-600 uppercase font-bold tracking-widest">
+                    <span className="text-[10px] text-[rgba(255,255,255,0.25)] uppercase font-medium tracking-[0.1em]">
                       Mean L/D — B
                     </span>
-                    <span className="font-mono text-xs text-[#bef500]">
+                    <span className="font-mono text-[11px] text-[#ff6b35]">
                       {getMean(ldB).toFixed(3)}
                     </span>
                   </div>
@@ -552,54 +549,54 @@ const RunComparisonPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="h-px bg-hud-border mb-8" />
+        <div className="h-px bg-[rgba(255,255,255,0.06)] mb-6" />
 
         {/* ── Section 03: DELTA METRICS TABLE ─────────────────────────────── */}
         {compared && tableRows.length > 0 && (
           <>
-            <div className="mb-4">
-              <span className="hud-label text-accent-cyan">
+            <div className="mb-3">
+              <span className="text-[10px] tracking-[0.1em] uppercase text-nereus-accent">
                 Comparative Metrics Matrix
               </span>
             </div>
 
-            <div className="bg-accent/5 border border-hud-border rounded-md overflow-hidden mb-8">
-              <table className="w-full text-xs">
+            <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] overflow-hidden mb-6" style={{ borderRadius: '2px' }}>
+              <table className="w-full text-[11px]">
                 <thead>
-                  <tr className="border-b border-hud-border bg-surface-container">
-                    <th className="text-left px-4 py-3 hud-label text-slate-500">
+                  <tr className="border-b border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.03)]">
+                    <th className="text-left px-3 py-2.5 text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">
                       Metric
                     </th>
-                    <th className="text-left px-4 py-3 hud-label text-[#c3f5ff]">
+                    <th className="text-left px-3 py-2.5 text-[10px] tracking-[0.1em] uppercase text-[#00d4ff]">
                       Run A #{runAId}
                     </th>
-                    <th className="text-left px-4 py-3 hud-label text-[#bef500]">
+                    <th className="text-left px-3 py-2.5 text-[10px] tracking-[0.1em] uppercase text-[#ff6b35]">
                       Run B #{runBId}
                     </th>
-                    <th className="text-left px-4 py-3 hud-label text-slate-500">
+                    <th className="text-left px-3 py-2.5 text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">
                       Δ
                     </th>
-                    <th className="text-left px-4 py-3 hud-label text-slate-500">
+                    <th className="text-left px-3 py-2.5 text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">
                       % Change
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-hud-border">
+                <tbody className="divide-y divide-[rgba(255,255,255,0.06)]">
                   {tableRows.map((row) => (
                     <tr
                       key={row.label}
-                      className="hover:bg-accent/5 transition-colors duration-150"
+                      className="hover:bg-[rgba(255,255,255,0.02)] transition-colors duration-150"
                     >
-                      <td className="px-4 py-3 text-slate-400 truncate max-w-[160px]">
+                      <td className="px-3 py-2.5 text-[rgba(255,255,255,0.5)] truncate max-w-[160px]">
                         {row.label}
                       </td>
-                      <td className="px-4 py-3 font-mono text-[#c3f5ff]">
+                      <td className="px-3 py-2.5 font-mono text-[#00d4ff]">
                         {row.a}
                       </td>
-                      <td className="px-4 py-3 font-mono text-[#bef500]">
+                      <td className="px-3 py-2.5 font-mono text-[#ff6b35]">
                         {row.b}
                       </td>
-                      <td className="px-4 py-3 font-mono">
+                      <td className="px-3 py-2.5 font-mono">
                         {typeof row.delta === "number"
                           ? formatDelta(
                               row.delta,
@@ -607,7 +604,7 @@ const RunComparisonPage: React.FC = () => {
                             )
                           : "—"}
                       </td>
-                      <td className="px-4 py-3 font-mono">
+                      <td className="px-3 py-2.5 font-mono">
                         {typeof row.pct === "number"
                           ? formatPercent(
                               row.pct,
@@ -621,36 +618,28 @@ const RunComparisonPage: React.FC = () => {
               </table>
             </div>
 
-            <div className="h-px bg-hud-border mb-8" />
+            <div className="h-px bg-[rgba(255,255,255,0.06)] mb-6" />
           </>
         )}
 
         {/* ── Section 04: FRAME SYNC VIEWER ───────────────────────────────── */}
         {compared && (
-          <div className="grid grid-cols-12 gap-6">
-            <div className="col-span-6 flex flex-col gap-2">
-              <span className="hud-label text-[#c3f5ff] border-l-2 border-[#c3f5ff] pl-2">
+          <div className="grid grid-cols-12 gap-5">
+            <div className="col-span-6 flex flex-col gap-1.5">
+              <span className="text-[10px] tracking-[0.1em] uppercase text-[#00d4ff] border-l-2 border-[#00d4ff] pl-2">
                 Run A — #{runAId}
               </span>
-              <div className="bg-accent/5 border border-hud-border rounded-md overflow-hidden">
+              <div className="relative bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] overflow-hidden h-[400px]" style={{ borderRadius: '2px' }}>
                 {runA && <VtkViewport />}
-                <div className="flex items-center justify-between px-4 py-2 border-t border-hud-border">
-                  <ColorbarLegend />
-                  <MetricHUD />
-                </div>
               </div>
             </div>
 
-            <div className="col-span-6 flex flex-col gap-2">
-              <span className="hud-label text-[#bef500] border-l-2 border-[#bef500] pl-2">
+            <div className="col-span-6 flex flex-col gap-1.5">
+              <span className="text-[10px] tracking-[0.1em] uppercase text-[#ff6b35] border-l-2 border-[#ff6b35] pl-2">
                 Run B — #{runBId}
               </span>
-              <div className="bg-accent/5 border border-hud-border rounded-md overflow-hidden">
+              <div className="relative bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] overflow-hidden h-[400px]" style={{ borderRadius: '2px' }}>
                 {runB && <VtkViewport />}
-                <div className="flex items-center justify-between px-4 py-2 border-t border-hud-border">
-                  <ColorbarLegend />
-                  <MetricHUD />
-                </div>
               </div>
             </div>
           </div>

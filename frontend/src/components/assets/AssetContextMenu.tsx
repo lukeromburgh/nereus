@@ -95,28 +95,28 @@ export default function AssetContextMenu({ x, y, actions, onClose }: Props) {
   return (
     <div
       ref={ref}
-      style={style}
-      className="fixed z-50 bg-[#131e23] border border-hud-border rounded-md shadow-xl py-1 min-w-[160px] animate-in fade-in-0 zoom-in-95"
+      style={{ ...style, borderRadius: "2px" }}
+      className="fixed z-50 bg-nereus-panel border border-[rgba(255,255,255,0.08)] py-1 min-w-[160px]"
     >
       {actions.map((action, i) => {
         const Icon = action.icon;
         return (
           <div key={i}>
             {action.divider && i > 0 && (
-              <div className="border-t border-hud-border my-1" />
+              <div className="border-t border-[rgba(255,255,255,0.06)] my-1" />
             )}
             <button
               onClick={() => {
                 action.onClick();
                 onClose();
               }}
-              className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-xs transition-colors ${
+              className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11px] transition-colors ${
                 action.danger
-                  ? "text-red-400 hover:bg-red-500/10"
-                  : "text-slate-300 hover:bg-white/5"
+                  ? "text-nereus-orange hover:bg-[rgba(255,107,53,0.08)]"
+                  : "text-[rgba(255,255,255,0.6)] hover:bg-[rgba(255,255,255,0.04)]"
               }`}
             >
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className="h-[14px] w-[14px]" />
               {action.label}
             </button>
           </div>

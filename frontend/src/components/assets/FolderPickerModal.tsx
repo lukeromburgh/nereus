@@ -28,21 +28,21 @@ function FolderNode({
     <div>
       <button
         onClick={() => onSelect(folder.id)}
-        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-white/5 rounded transition-colors"
+        className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[rgba(255,255,255,0.6)] hover:bg-[rgba(255,255,255,0.04)] transition-colors"
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
         {folder.children.length > 0 ? (
           <ChevronRight
-            className={`h-3 w-3 text-slate-500 transition-transform ${expanded ? "rotate-90" : ""}`}
+            className={`h-[10px] w-[10px] text-[rgba(255,255,255,0.3)] transition-transform ${expanded ? "rotate-90" : ""}`}
             onClick={(e) => {
               e.stopPropagation();
               setExpanded(!expanded);
             }}
           />
         ) : (
-          <span className="w-3" />
+          <span className="w-[10px]" />
         )}
-        <FolderIcon className="h-3.5 w-3.5 text-amber-400" />
+        <FolderIcon className="h-[14px] w-[14px] text-[#fbbf24]" />
         <span className="truncate">{folder.name}</span>
       </button>
       {expanded &&
@@ -90,23 +90,23 @@ export default function FolderPickerModal({
         if (e.target === overlayRef.current) onClose();
       }}
     >
-      <div className="bg-[#131e23] border border-hud-border rounded-lg shadow-xl w-full max-w-sm p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
+      <div className="bg-nereus-panel border border-[rgba(255,255,255,0.08)] w-full max-w-sm p-3" style={{ borderRadius: '2px' }}>
+        <div className="flex items-center justify-between mb-2.5">
+          <h3 className="text-[12px] font-medium text-[rgba(255,255,255,0.85)]">{title}</h3>
           <button
             onClick={onClose}
-            className="text-slate-500 hover:text-slate-300 transition-colors"
+            className="text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.6)] transition-colors"
           >
-            <X className="h-4 w-4" />
+            <X className="h-[14px] w-[14px]" />
           </button>
         </div>
 
-        <div className="max-h-64 overflow-y-auto border border-hud-border rounded bg-black/20 p-1 mb-3">
+        <div className="max-h-64 overflow-y-auto border border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.2)] p-1 mb-2.5" style={{ borderRadius: '2px' }}>
           <button
             onClick={() => onSelect(null)}
-            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-white/5 rounded transition-colors"
+            className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[rgba(255,255,255,0.6)] hover:bg-[rgba(255,255,255,0.04)] transition-colors"
           >
-            <FolderIcon className="h-3.5 w-3.5 text-slate-400" />
+            <FolderIcon className="h-[14px] w-[14px] text-[rgba(255,255,255,0.4)]" />
             <span>Project Root</span>
           </button>
           {folders.map((f) => (
@@ -123,7 +123,7 @@ export default function FolderPickerModal({
         <div className="flex justify-end">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 border border-hud-border rounded transition-colors"
+            className="px-2.5 py-1 text-[11px] text-[rgba(255,255,255,0.5)] hover:text-[rgba(255,255,255,0.8)] border border-[rgba(255,255,255,0.08)] transition-colors" style={{ borderRadius: '2px' }}
           >
             Cancel
           </button>

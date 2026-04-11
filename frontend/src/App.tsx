@@ -91,25 +91,25 @@ function SimulationToolbar({ onRefresh }: { onRefresh: () => void }) {
 
   const statusColor =
     status === "COMPLETED"
-      ? "bg-accent-emerald/20 text-accent-emerald border-accent-emerald/30"
+      ? "bg-[rgba(0,212,255,0.08)] text-nereus-accent border-[rgba(0,212,255,0.2)]"
       : status === "FAILED"
-        ? "bg-accent-rose/20 text-accent-rose border-accent-rose/30"
+        ? "bg-[rgba(255,107,53,0.08)] text-nereus-orange border-[rgba(255,107,53,0.2)]"
         : status === "RUNNING" || status === "MESHING"
-          ? "bg-accent/20 text-accent-glow border-accent/30 animate-pulse-slow"
+          ? "bg-[rgba(0,212,255,0.08)] text-nereus-accent border-[rgba(0,212,255,0.2)] animate-pulse-slow"
           : status === "PENDING"
-            ? "bg-accent-amber/20 text-accent-amber border-accent-amber/30"
-            : "bg-slate-800/50 text-slate-500 border-slate-700/50";
+            ? "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] border-[rgba(255,255,255,0.1)]"
+            : "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.35)] border-[rgba(255,255,255,0.08)]";
 
   return (
     <>
       {status !== "IDLE" && (
-        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-2xs font-medium border ${statusColor}`}>
-          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium border ${statusColor}`} style={{ borderRadius: '2px' }}>
+          <span className="h-1.5 w-1.5 bg-current" style={{ borderRadius: '1px' }} />
           {status}
         </span>
       )}
 
-      <div className="h-4 w-px bg-slate-700/50" />
+      <div className="h-3.5 w-px bg-[rgba(255,255,255,0.08)]" />
 
       <input
         ref={fileInputRef}
@@ -121,26 +121,28 @@ function SimulationToolbar({ onRefresh }: { onRefresh: () => void }) {
       <button
         onClick={handleUploadClick}
         disabled={uploadState === "uploading"}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
+        className={`inline-flex items-center gap-1.5 px-2.5 h-7 text-[11px] font-medium transition-all duration-200 ${
           uploadState === "uploading"
-            ? "bg-slate-800/50 text-slate-500 cursor-not-allowed border border-slate-700/30"
-            : "bg-accent/10 text-accent-glow hover:bg-accent/20 border border-accent/20 hover:border-accent/40 hover:shadow-glow-blue"
+            ? "bg-nereus-panel text-[rgba(255,255,255,0.25)] cursor-not-allowed border border-[rgba(255,255,255,0.07)]"
+            : "bg-[rgba(0,212,255,0.08)] text-nereus-accent hover:bg-[rgba(0,212,255,0.15)] border border-[rgba(0,212,255,0.2)] hover:border-[rgba(0,212,255,0.35)]"
         }`}
+        style={{ borderRadius: '2px' }}
       >
-        <Upload className="h-3.5 w-3.5" />
+        <Upload className="h-[14px] w-[14px]" />
         {uploadState === "uploading" ? `${uploadProgress}%` : "Upload"}
       </button>
 
       <button
         onClick={onRefresh}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border border-hud-border bg-surface-raised hover:bg-slate-800/60 text-slate-400 hover:text-slate-200 transition-all duration-200"
+        className="inline-flex items-center gap-1 px-2 h-7 text-[11px] font-medium border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)] transition-all duration-200"
+        style={{ borderRadius: '2px' }}
       >
-        <RefreshCw className="h-3.5 w-3.5" />
+        <RefreshCw className="h-[14px] w-[14px]" />
       </button>
 
       {uploadState === "error" && uploadError && (
-        <span className="inline-flex items-center gap-1 text-2xs text-accent-rose ml-1 max-w-[200px] truncate" title={uploadError}>
-          <AlertCircle className="h-3 w-3 flex-shrink-0" />
+        <span className="inline-flex items-center gap-1 text-[10px] text-nereus-orange ml-1 max-w-[200px] truncate" title={uploadError}>
+          <AlertCircle className="h-[14px] w-[14px] flex-shrink-0" />
           {uploadError}
         </span>
       )}
@@ -299,12 +301,12 @@ export default function SimulationPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="absolute inset-0 z-50 flex items-center justify-center bg-[#0d1518]/80 backdrop-blur-sm"
+            className="absolute inset-0 z-50 flex items-center justify-center bg-nereus-base/80"
           >
-            <div className="flex flex-col items-center gap-3 p-8 border-2 border-dashed border-accent-cyan/50 rounded-xl">
-              <Upload className="h-10 w-10 text-accent-cyan" />
-              <span className="text-sm font-medium text-accent-cyan">Drop geometry file to upload</span>
-              <span className="text-2xs text-slate-500">{ACCEPTED_EXTENSIONS.join(", ")}</span>
+            <div className="flex flex-col items-center gap-2 p-6 border-2 border-dashed border-[rgba(0,212,255,0.4)]" style={{ borderRadius: '2px' }}>
+              <Upload className="h-8 w-8 text-nereus-accent" />
+              <span className="text-[12px] font-medium text-nereus-accent">Drop geometry file to upload</span>
+              <span className="text-[10px] text-[rgba(255,255,255,0.35)]">{ACCEPTED_EXTENSIONS.join(", ")}</span>
             </div>
           </motion.div>
         )}
@@ -329,16 +331,17 @@ export default function SimulationPage() {
               animate={{ x: 0 }}
               exit={{ x: -240 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="absolute left-0 top-0 bottom-0 z-30 w-60 border-r border-hud-border bg-[#0f1619] overflow-y-auto scrollbar-dark flex flex-col shadow-2xl shadow-black/50"
+              className="absolute left-0 top-0 bottom-0 z-30 w-56 border-r border-[rgba(255,255,255,0.06)] bg-[#0d0f14] overflow-y-auto scrollbar-dark flex flex-col"
             >
               {/* Close button inside panel header */}
-              <div className="flex items-center justify-between px-3 pt-3 pb-1">
-                <span className="hud-label text-slate-500 text-2xs">Explorer</span>
+              <div className="flex items-center justify-between px-2.5 pt-2.5 pb-1">
+                <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.25)]">Explorer</span>
                 <button
                   onClick={() => setPanelOpen(false)}
-                  className="p-1 rounded hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors"
+                  className="p-0.5 hover:bg-[rgba(255,255,255,0.05)] text-[rgba(255,255,255,0.35)] hover:text-[rgba(255,255,255,0.7)] transition-colors"
+                  style={{ borderRadius: '2px' }}
                 >
-                  <PanelLeftClose className="h-3.5 w-3.5" />
+                  <PanelLeftClose className="h-[14px] w-[14px]" />
                 </button>
               </div>
               <Sidebar refreshNonce={refreshNonce} />
@@ -351,10 +354,11 @@ export default function SimulationPage() {
       {!panelOpen && (
         <button
           onClick={() => setPanelOpen(true)}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 px-1 py-3 rounded-r-md bg-[#161d21]/90 border border-l-0 border-hud-border/60 text-slate-500 hover:text-slate-200 hover:bg-[#1c252a] transition-all duration-200 shadow-lg shadow-black/30"
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-1.5 px-1 py-2.5 bg-[#0d0f14] border border-l-0 border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.35)] hover:text-[rgba(255,255,255,0.7)] hover:bg-nereus-panel transition-all duration-200"
+          style={{ borderRadius: '0 2px 2px 0' }}
           title="Show assets & runs"
         >
-          <PanelLeftOpen className="h-3 w-3" />
+          <PanelLeftOpen className="h-[14px] w-[14px]" />
           <span className="text-[9px] font-medium tracking-widest uppercase [writing-mode:vertical-lr]">Assets</span>
         </button>
       )}
@@ -364,13 +368,13 @@ export default function SimulationPage() {
         <div className="flex-1 relative overflow-hidden min-h-0">
           <VtkViewport />
         </div>
-        <div className="border-t border-hud-border bg-slate-950/60 backdrop-blur-sm h-56 flex-shrink-0">
+        <div className="border-t border-[rgba(255,255,255,0.06)] bg-nereus-base h-56 flex-shrink-0">
           <LogConsoleCompact />
         </div>
       </main>
 
       {/* ── Column 3: Right Panel — Config or Analysis ── */}
-      <aside className="w-80 border-l border-hud-border bg-[#0f1619] overflow-y-auto scrollbar-dark flex flex-col flex-shrink-0 p-4">
+      <aside className="w-72 border-l border-[rgba(255,255,255,0.06)] bg-[#0d0f14] overflow-y-auto scrollbar-dark flex flex-col flex-shrink-0 p-3">
         <AnimatePresence mode="wait">
           {status === "COMPLETED" ? (
             <motion.div

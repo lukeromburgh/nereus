@@ -71,9 +71,9 @@ function Node({ node, style, dragHandle }: NodeRendererProps<TreeNode>) {
     <div
       ref={dragHandle}
       style={style}
-      className={`flex items-center gap-1.5 px-2 py-0.5 cursor-pointer rounded group transition-all
-        ${node.isSelected ? "bg-accent-cyan/10 text-accent-cyan" : "text-slate-300 hover:bg-white/5"}
-        ${node.willReceiveDrop || isDropHighlighted ? "ring-1 ring-accent-cyan/50 bg-accent-cyan/10" : ""}
+      className={`flex items-center gap-1.5 px-2 py-0.5 cursor-pointer group transition-all
+        ${node.isSelected ? "bg-[rgba(0,212,255,0.08)] text-nereus-accent" : "text-[rgba(255,255,255,0.6)] hover:bg-[rgba(255,255,255,0.04)]"}
+        ${node.willReceiveDrop || isDropHighlighted ? "ring-1 ring-[rgba(0,212,255,0.4)] bg-[rgba(0,212,255,0.08)]" : ""}
       `}
       onClick={() => node.isInternal && node.toggle()}
       onContextMenu={(e) => {
@@ -120,22 +120,22 @@ function Node({ node, style, dragHandle }: NodeRendererProps<TreeNode>) {
     >
       {isFolder ? (
         <ChevronRight
-          className={`h-3 w-3 text-slate-500 transition-transform flex-shrink-0 ${
+          className={`h-[10px] w-[10px] text-[rgba(255,255,255,0.3)] transition-transform flex-shrink-0 ${
             node.isOpen ? "rotate-90" : ""
           }`}
         />
       ) : (
-        <span className="w-3 flex-shrink-0" />
+        <span className="w-[10px] flex-shrink-0" />
       )}
 
       {isFolder ? (
         node.isOpen || isDropHighlighted ? (
-          <FolderOpen className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+          <FolderOpen className="h-[14px] w-[14px] text-[#fbbf24] flex-shrink-0" />
         ) : (
-          <FolderIcon className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+          <FolderIcon className="h-[14px] w-[14px] text-[#fbbf24] flex-shrink-0" />
         )
       ) : (
-        <FileBox className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+        <FileBox className="h-[14px] w-[14px] text-[rgba(255,255,255,0.4)] flex-shrink-0" />
       )}
 
       {node.isEditing ? (
@@ -143,7 +143,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<TreeNode>) {
           type="text"
           defaultValue={data.name}
           autoFocus
-          className="flex-1 bg-transparent border border-accent-cyan/30 rounded px-1 py-0 text-xs text-slate-200 outline-none"
+          className="flex-1 bg-transparent border border-[rgba(0,212,255,0.3)] px-1 py-0 text-[11px] text-[rgba(255,255,255,0.8)] outline-none" style={{ borderRadius: '2px' }}
           onFocus={(e) => {
             const val = e.target.value;
             const dotIdx = isFolder ? -1 : val.lastIndexOf(".");
@@ -156,7 +156,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<TreeNode>) {
           }}
         />
       ) : (
-        <span className="text-xs truncate">{data.name}</span>
+        <span className="text-[11px] truncate">{data.name}</span>
       )}
     </div>
   );

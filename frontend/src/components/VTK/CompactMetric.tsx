@@ -12,7 +12,7 @@ interface CompactMetricProps {
   label: string;
   value: string | number;
   unit?: string;
-  color?: string; // Tailwind color class, e.g. "text-accent-emerald"
+  color?: string; // Tailwind color class, e.g. "text-nereus-accent"
   size?: MetricSize;
   icon?: ReactNode; // Optional icon to display above label
 }
@@ -21,29 +21,29 @@ export function CompactMetric({
   label,
   value,
   unit,
-  color = "text-slate-300",
+  color = "text-[rgba(255,255,255,0.7)]",
   size = "md",
   icon,
 }: CompactMetricProps) {
   const sizeClasses = {
-    sm: "text-xs",
-    md: "text-sm",
-    lg: "text-lg",
+    sm: "text-[11px]",
+    md: "text-[12px]",
+    lg: "text-[16px]",
   };
 
   return (
-    <div className="flex flex-col items-center gap-1">
-      {icon && <div className="text-slate-500">{icon}</div>}
+    <div className="flex flex-col items-center gap-0.5">
+      {icon && <div className="text-[rgba(255,255,255,0.3)]">{icon}</div>}
       
-      <div className="text-2xs text-slate-500 font-normal">{label}</div>
+      <div className="text-[10px] text-[rgba(255,255,255,0.35)] font-normal">{label}</div>
       
       <div className="flex items-baseline gap-0.5">
         <span
-          className={`${sizeClasses[size]} font-mono tabular-nums font-semibold ${color}`}
+          className={`${sizeClasses[size]} font-mono tabular-nums font-medium ${color}`}
         >
           {value}
         </span>
-        {unit && <span className="text-2xs text-slate-600">{unit}</span>}
+        {unit && <span className="text-[10px] text-[rgba(255,255,255,0.25)]">{unit}</span>}
       </div>
     </div>
   );

@@ -70,30 +70,30 @@ export function OrientationPanel() {
   };
 
   return (
-    <div className="glass-panel rounded-lg overflow-hidden">
+    <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] overflow-hidden" style={{ borderRadius: '2px' }}>
       {/* Header — toggle collapse */}
       <button
         type="button"
         onClick={() => setCollapsed((c) => !c)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors"
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left hover:bg-[rgba(255,255,255,0.03)] transition-colors"
       >
         {collapsed ? (
-          <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
+          <ChevronRight className="h-[10px] w-[10px] text-[rgba(255,255,255,0.35)]" />
         ) : (
-          <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
+          <ChevronDown className="h-[10px] w-[10px] text-[rgba(255,255,255,0.35)]" />
         )}
-        <RotateCcw className="h-3.5 w-3.5 text-accent-cyan" />
-        <span className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+        <RotateCcw className="h-[14px] w-[14px] text-nereus-accent" />
+        <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">
           Orientation Correction
         </span>
       </button>
 
       {!collapsed && (
-        <div className="px-3 pb-3 flex flex-col gap-3">
+        <div className="px-2.5 pb-2.5 flex flex-col gap-2">
           {!isAssetPreview && (
-            <div className="rounded border border-blue-500/20 bg-blue-500/5 px-2.5 py-2 flex gap-2 items-start">
-              <AlertTriangle className="h-3.5 w-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
-              <p className="text-2xs text-blue-300 leading-normal">
+            <div className="border border-[rgba(0,212,255,0.15)] bg-[rgba(0,212,255,0.04)] px-2 py-1.5 flex gap-1.5 items-start" style={{ borderRadius: '2px' }}>
+              <AlertTriangle className="h-[14px] w-[14px] text-nereus-accent mt-0.5 flex-shrink-0" />
+              <p className="text-[10px] text-[rgba(0,212,255,0.7)] leading-normal">
                 Orientation correction is locked while viewing simulation results. 
                 These values are baked into the CFD mesh by the solver.
               </p>
@@ -153,12 +153,12 @@ export function OrientationPanel() {
           </FieldWithHint>
 
           {/* Quick-set buttons */}
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1">
             <button
               type="button"
               disabled={isDisabled}
               onClick={() => handleQuickSet(0, 0, 180)}
-              className="rounded px-2 py-1 text-2xs font-medium border border-hud-border bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:border-accent/40 transition-colors disabled:opacity-40"
+              className="px-2 py-0.5 text-[10px] font-medium border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)] hover:border-[rgba(0,212,255,0.3)] transition-colors disabled:opacity-40" style={{ borderRadius: '2px' }}
             >
               Flip 180° (tail-first)
             </button>
@@ -166,7 +166,7 @@ export function OrientationPanel() {
               type="button"
               disabled={isDisabled}
               onClick={() => handleQuickSet(0, 90, 0)}
-              className="rounded px-2 py-1 text-2xs font-medium border border-hud-border bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:border-accent/40 transition-colors disabled:opacity-40"
+              className="px-2 py-0.5 text-[10px] font-medium border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)] hover:border-[rgba(0,212,255,0.3)] transition-colors disabled:opacity-40" style={{ borderRadius: '2px' }}
             >
               Rotate 90° (sideways)
             </button>
@@ -174,7 +174,7 @@ export function OrientationPanel() {
               type="button"
               disabled={isDisabled}
               onClick={() => handleQuickSet(0, -90, 0)}
-              className="rounded px-2 py-1 text-2xs font-medium border border-hud-border bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:border-accent/40 transition-colors disabled:opacity-40"
+              className="px-2 py-0.5 text-[10px] font-medium border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)] hover:border-[rgba(0,212,255,0.3)] transition-colors disabled:opacity-40" style={{ borderRadius: '2px' }}
             >
               Rotate −90° (sideways)
             </button>
@@ -182,7 +182,7 @@ export function OrientationPanel() {
               type="button"
               disabled={isDisabled}
               onClick={() => handleQuickSet(0, 0, 0)}
-              className="rounded px-2 py-1 text-2xs font-medium border border-hud-border bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:border-accent/40 transition-colors disabled:opacity-40"
+              className="px-2 py-0.5 text-[10px] font-medium border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)] hover:border-[rgba(0,212,255,0.3)] transition-colors disabled:opacity-40" style={{ borderRadius: '2px' }}
             >
               Reset
             </button>
@@ -190,30 +190,30 @@ export function OrientationPanel() {
 
           {/* Geometry dimensions readout */}
           {geometryDimensions && (
-            <div className="rounded border border-hud-border bg-white/[0.02] px-2 py-1.5">
-              <div className="text-2xs text-slate-500 mb-1 font-medium uppercase tracking-wider">
+            <div className="border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-2 py-1.5" style={{ borderRadius: '2px' }}>
+              <div className="text-[10px] text-[rgba(255,255,255,0.35)] mb-1 font-medium tracking-[0.1em] uppercase">
                 Detected Dimensions
               </div>
               <div className="grid grid-cols-3 gap-1 text-center">
                 <div>
-                  <div className="text-2xs text-slate-500">Chord</div>
-                  <div className="text-xs font-mono text-slate-200">
+                  <div className="text-[10px] text-[rgba(255,255,255,0.35)]">Chord</div>
+                  <div className="text-[12px] font-mono text-[rgba(255,255,255,0.8)]">
                     {geometryDimensions.chord_m != null
                       ? `${geometryDimensions.chord_m.toFixed(4)} m`
                       : "—"}
                   </div>
                 </div>
                 <div>
-                  <div className="text-2xs text-slate-500">Span</div>
-                  <div className="text-xs font-mono text-slate-200">
+                  <div className="text-[10px] text-[rgba(255,255,255,0.35)]">Span</div>
+                  <div className="text-[12px] font-mono text-[rgba(255,255,255,0.8)]">
                     {geometryDimensions.span_m != null
                       ? `${geometryDimensions.span_m.toFixed(4)} m`
                       : "—"}
                   </div>
                 </div>
                 <div>
-                  <div className="text-2xs text-slate-500">Thickness</div>
-                  <div className="text-xs font-mono text-slate-200">
+                  <div className="text-[10px] text-[rgba(255,255,255,0.35)]">Thickness</div>
+                  <div className="text-[12px] font-mono text-[rgba(255,255,255,0.8)]">
                     {geometryDimensions.thickness_m != null
                       ? `${geometryDimensions.thickness_m.toFixed(4)} m`
                       : "—"}
@@ -225,8 +225,8 @@ export function OrientationPanel() {
               {geometryDimensions.chord_m != null &&
                 geometryDimensions.span_m != null &&
                 geometryDimensions.chord_m < geometryDimensions.span_m && (
-                  <div className="mt-1.5 flex items-start gap-1.5 text-2xs text-red-400">
-                    <AlertTriangle className="h-3 w-3 flex-shrink-0 mt-0.5" />
+                  <div className="mt-1 flex items-start gap-1 text-[10px] text-nereus-orange">
+                    <AlertTriangle className="h-[14px] w-[14px] flex-shrink-0 mt-0.5" />
                     <span>
                       Chord &lt; Span — the foil may still be sideways. Adjust
                       orientation above.

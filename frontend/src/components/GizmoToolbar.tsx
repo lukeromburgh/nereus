@@ -21,7 +21,7 @@ export function GizmoToolbar() {
   const setGizmoMode = useSimStore((s) => s.setGizmoMode);
 
   return (
-    <div className="pointer-events-auto absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 glass-panel rounded-lg px-1 py-1">
+    <div className="pointer-events-auto absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 bg-[rgba(17,19,24,0.9)] border border-[rgba(255,255,255,0.08)] px-1 py-0.5" style={{ borderRadius: '2px' }}>
       {MODES.map(({ mode, icon: Icon, label, shortcut }) => {
         const active = gizmoMode === mode;
         return (
@@ -31,16 +31,17 @@ export function GizmoToolbar() {
             title={`${label} (${shortcut})`}
             onClick={() => setGizmoMode(mode)}
             className={`
-              relative flex items-center justify-center w-8 h-8 rounded
+              relative flex items-center justify-center w-7 h-7
               transition-colors
               ${
                 active
-                  ? "bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/40"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] border border-transparent"
+                  ? "bg-[rgba(0,212,255,0.12)] text-nereus-accent border border-[rgba(0,212,255,0.3)]"
+                  : "text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.8)] hover:bg-[rgba(255,255,255,0.05)] border border-transparent"
               }
             `}
+            style={{ borderRadius: '2px' }}
           >
-            <Icon className="w-4 h-4" />
+            <Icon className="w-[14px] h-[14px]" />
             <span className="absolute -bottom-0.5 right-0.5 text-[8px] font-mono leading-none opacity-50">
               {shortcut}
             </span>
@@ -49,8 +50,8 @@ export function GizmoToolbar() {
       })}
 
       {/* Snap hint */}
-      <div className="ml-1 text-[9px] text-slate-500 font-mono leading-tight px-1">
-        Hold <kbd className="bg-white/[0.08] px-0.5 rounded text-slate-400">⇧</kbd> to snap
+      <div className="ml-1 text-[9px] text-[rgba(255,255,255,0.25)] font-mono leading-tight px-1">
+        Hold <kbd className="bg-[rgba(255,255,255,0.06)] px-0.5 text-[rgba(255,255,255,0.45)]" style={{ borderRadius: '1px' }}>⇧</kbd> to snap
       </div>
     </div>
   );

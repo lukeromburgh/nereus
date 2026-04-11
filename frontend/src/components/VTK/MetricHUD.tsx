@@ -70,12 +70,12 @@ export function MetricHUD() {
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* Main Metrics Panel (Top Right)                                 */}
       {/* ═══════════════════════════════════════════════════════════════ */}
-      <div className="pointer-events-none absolute right-3 top-3 z-20 w-80">
-        <div className="glass-panel-refined rounded-lg p-4 space-y-4">
+      <div className="pointer-events-none absolute right-2.5 top-2.5 z-20 w-72">
+        <div className="bg-[rgba(17,19,24,0.9)] border border-[rgba(255,255,255,0.08)] p-3 space-y-3" style={{ borderRadius: '2px' }}>
           {/* Header: "METRICS" + Frame counter */}
           <div className="flex items-center justify-between">
-            <span className="hud-label text-slate-400">METRICS</span>
-            <span className="text-2xs text-slate-600 font-mono tabular-nums">
+            <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">METRICS</span>
+            <span className="text-[10px] text-[rgba(255,255,255,0.25)] font-mono tabular-nums">
               F{currentFrame}/{totalFrames - 1}
             </span>
           </div>
@@ -83,68 +83,68 @@ export function MetricHUD() {
           {/* ─────────────────────────────────────────────────────────── */}
           {/* Hero: L/D Ratio                                            */}
           {/* ─────────────────────────────────────────────────────────── */}
-          <div className="flex flex-col items-center justify-center py-2">
-            <div className="text-2xs text-slate-500 font-normal mb-1">
+          <div className="flex flex-col items-center justify-center py-1.5">
+            <div className="text-[10px] text-[rgba(255,255,255,0.35)] font-normal mb-0.5">
               L/D Ratio
             </div>
-            <div className={`text-3xl font-mono tabular-nums font-bold ${performanceColor}`}>
+            <div className={`text-[24px] font-mono tabular-nums font-medium ${performanceColor}`}>
               {formatNumber(ldRatio, 3)}
             </div>
           </div>
 
           {/* Divider */}
-          <div className="h-px bg-hud-border/50" />
+          <div className="h-px bg-[rgba(255,255,255,0.06)]" />
 
           {/* ─────────────────────────────────────────────────────────── */}
           {/* Secondary Forces (Horizontal)                              */}
           {/* ─────────────────────────────────────────────────────────── */}
-          <div className="flex justify-around gap-6 py-2">
+          <div className="flex justify-around gap-4 py-1.5">
             <CompactMetric
               label="Lift"
               value={formatNumber(current.Fz as number, 0)}
               unit="N"
-              color="text-accent-emerald"
+              color="text-nereus-accent"
               size="md"
             />
             <CompactMetric
               label="Drag"
               value={formatNumber(current.Fx as number, 0)}
               unit="N"
-              color="text-accent-rose"
+              color="text-nereus-orange"
               size="md"
             />
             <CompactMetric
               label="Side"
               value={formatNumber(current.Fy as number, 0)}
               unit="N"
-              color="text-accent-amber"
+              color="text-[#fbbf24]"
               size="md"
             />
           </div>
 
           {/* Divider */}
-          <div className="h-px bg-hud-border/50" />
+          <div className="h-px bg-[rgba(255,255,255,0.06)]" />
 
           {/* ─────────────────────────────────────────────────────────── */}
           {/* Coefficients (3-column grid)                               */}
           {/* ─────────────────────────────────────────────────────────── */}
-          <div className="grid grid-cols-3 gap-4 py-2">
+          <div className="grid grid-cols-3 gap-3 py-1.5">
             <CompactMetric
               label="Cl"
               value={formatNumber(current.Cl as number, 4)}
-              color="text-accent-cyan"
+              color="text-nereus-accent"
               size="sm"
             />
             <CompactMetric
               label="Cd"
               value={formatNumber(current.Cd as number, 4)}
-              color="text-accent-rose"
+              color="text-nereus-orange"
               size="sm"
             />
             <CompactMetric
               label="Cs"
               value={formatNumber(current.Cs as number, 4)}
-              color="text-accent-amber"
+              color="text-[#fbbf24]"
               size="sm"
             />
           </div>
@@ -154,12 +154,12 @@ export function MetricHUD() {
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* L/D History Chart (Left Side, Below Layer Manager)              */}
       {/* ═══════════════════════════════════════════════════════════════ */}
-      <div className="pointer-events-none absolute left-3 bottom-16 z-20 w-56">
+      <div className="pointer-events-none absolute left-2.5 bottom-14 z-20 w-48">
         <LDHistoryChart
           data={augmentedData as Record<string, unknown>[]}
           currentFrame={currentFrame}
           totalFrames={totalFrames}
-          color="#60a5fa"
+          color="#00d4ff"
         />
       </div>
     </>

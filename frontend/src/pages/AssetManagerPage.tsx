@@ -507,39 +507,39 @@ export default function AssetManagerPage() {
           path={buildBreadcrumb()}
           onNavigate={setCurrentFolder}
         />
-        <div className="h-4 w-px bg-slate-700/50 mx-1" />
+        <div className="h-4 w-px bg-[rgba(255,255,255,0.06)] mx-1" />
 
         <button
           onClick={() => {
             setNewFolderParent(currentFolderId);
             setNewFolderName("");
           }}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-slate-300 hover:text-slate-100 border border-hud-border rounded transition-colors"
+          className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-[rgba(255,255,255,0.6)] hover:text-[rgba(255,255,255,0.9)] border border-[rgba(255,255,255,0.08)] transition-colors" style={{ borderRadius: '2px' }}
         >
-          <FolderPlus className="h-3.5 w-3.5" />
+          <FolderPlus className="h-[14px] w-[14px]" />
           New Folder
         </button>
 
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-slate-300 hover:text-slate-100 border border-hud-border rounded transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-[rgba(255,255,255,0.6)] hover:text-[rgba(255,255,255,0.9)] border border-[rgba(255,255,255,0.08)] transition-colors disabled:opacity-50" style={{ borderRadius: '2px' }}
         >
-          <Upload className="h-3.5 w-3.5" />
+          <Upload className="h-[14px] w-[14px]" />
           {uploading ? `${uploadProgress}%` : "Upload"}
         </button>
 
-        <div className="h-4 w-px bg-slate-700/50 mx-1" />
+        <div className="h-4 w-px bg-[rgba(255,255,255,0.06)] mx-1" />
 
         <button
           onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
-          className="p-1 text-slate-400 hover:text-slate-200 transition-colors"
+          className="p-1 text-[rgba(255,255,255,0.4)] hover:text-[rgba(255,255,255,0.7)] transition-colors"
           title={viewMode === "grid" ? "List view" : "Grid view"}
         >
           {viewMode === "grid" ? (
-            <List className="h-4 w-4" />
+            <List className="h-[14px] w-[14px]" />
           ) : (
-            <Grid3X3 className="h-4 w-4" />
+            <Grid3X3 className="h-[14px] w-[14px]" />
           )}
         </button>
       </div>,
@@ -599,10 +599,10 @@ export default function AssetManagerPage() {
       {/* ── Left: Folder tree ────────────────────────────────────── */}
       <div
         ref={containerRef}
-        className="w-72 flex-shrink-0 border-r border-hud-border bg-surface-solid/50 flex flex-col"
+        className="w-72 flex-shrink-0 border-r border-[rgba(255,255,255,0.06)] bg-[#0d0f14] flex flex-col"
       >
-        <div className="px-3 py-2 border-b border-hud-border">
-          <span className="text-2xs text-slate-500 uppercase tracking-wider font-medium">
+        <div className="px-2.5 py-1.5 border-b border-[rgba(255,255,255,0.06)]">
+          <span className="text-[10px] text-[rgba(255,255,255,0.35)] uppercase tracking-[0.1em] font-medium">
             Explorer
           </span>
         </div>
@@ -633,8 +633,8 @@ export default function AssetManagerPage() {
 
       {/* ── Right: Grid/List view ────────────────────────────────── */}
       <div
-        className={`flex-1 overflow-auto p-4 transition-colors ${
-          fileDragOver ? "ring-2 ring-inset ring-accent-cyan/40 bg-accent-cyan/5" : ""
+        className={`flex-1 overflow-auto p-3 transition-colors ${
+          fileDragOver ? "ring-2 ring-inset ring-[rgba(0,212,255,0.3)] bg-[rgba(0,212,255,0.03)]" : ""
         }`}
         onDragOver={handleBackgroundDragOver}
         onDragLeave={handleBackgroundDragLeave}
@@ -642,26 +642,26 @@ export default function AssetManagerPage() {
         onContextMenu={handleBackgroundContextMenu}
       >
         {loading ? (
-          <div className="flex items-center justify-center h-full text-xs text-slate-500">
+          <div className="flex items-center justify-center h-full text-[11px] text-[rgba(255,255,255,0.35)]">
             Loading...
           </div>
         ) : currentFolders.length === 0 &&
           currentAssets.length === 0 &&
           newFolderName === null ? (
-          <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3">
-            <FileBox className="h-10 w-10 text-slate-600" />
-            <p className="text-sm">This folder is empty</p>
-            <p className="text-xs text-slate-600">
+          <div className="flex flex-col items-center justify-center h-full text-[rgba(255,255,255,0.35)] gap-2.5">
+            <FileBox className="h-8 w-8 text-[rgba(255,255,255,0.2)]" />
+            <p className="text-[12px]">This folder is empty</p>
+            <p className="text-[11px] text-[rgba(255,255,255,0.25)]">
               Drag files here or use the Upload button
             </p>
           </div>
         ) : viewMode === "grid" ? (
           /* ── Grid view ──────────────────────────────────────── */
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2.5">
             {/* New folder inline */}
             {newFolderName !== null && (
-              <div className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-accent-cyan/30 bg-accent-cyan/5">
-                <FolderIcon className="h-10 w-10 text-amber-400" />
+              <div className="flex flex-col items-center gap-1.5 p-2.5 border border-[rgba(0,212,255,0.2)] bg-[rgba(0,212,255,0.03)]" style={{ borderRadius: '2px' }}>
+                <FolderIcon className="h-8 w-8 text-[#fbbf24]" />
                 <input
                   ref={newFolderInputRef}
                   type="text"
@@ -673,7 +673,7 @@ export default function AssetManagerPage() {
                     if (e.key === "Escape") setNewFolderName(null);
                   }}
                   placeholder="Folder name"
-                  className="w-full bg-transparent border border-hud-border rounded px-1.5 py-0.5 text-xs text-slate-200 text-center outline-none focus:border-accent-cyan/50"
+                  className="w-full bg-transparent border border-[rgba(255,255,255,0.08)] px-1.5 py-0.5 text-[11px] text-[rgba(255,255,255,0.8)] text-center outline-none focus:border-[rgba(0,212,255,0.3)]" style={{ borderRadius: '2px' }}
                 />
               </div>
             )}
@@ -682,13 +682,13 @@ export default function AssetManagerPage() {
             {currentFolders.map((f) => (
               <div
                 key={`folder-${f.id}`}
-                className={`group flex flex-col items-center gap-1.5 p-3 rounded-lg border cursor-pointer transition-all relative
+                className={`group flex flex-col items-center gap-1.5 p-2.5 border cursor-pointer transition-all relative
                   ${
                     isFolderHighlighted(f.id)
-                      ? "border-accent-cyan bg-accent-cyan/10 scale-[1.02] shadow-lg shadow-accent-cyan/10"
-                      : "border-transparent hover:border-hud-border hover:bg-white/[0.02]"
+                      ? "border-[rgba(0,212,255,0.3)] bg-[rgba(0,212,255,0.05)] scale-[1.02]"
+                      : "border-transparent hover:border-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.02)]"
                   }
-                `}
+                `} style={{ borderRadius: '2px' }}
                 onDoubleClick={() => setCurrentFolder(f.id)}
                 onContextMenu={(e) =>
                   handleGridContextMenu(e, {
@@ -708,16 +708,16 @@ export default function AssetManagerPage() {
                       { type: "folder", id: f.id, name: f.name },
                     );
                   }}
-                  className="absolute top-1 right-1 p-0.5 text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-1 right-1 p-0.5 text-[rgba(255,255,255,0.2)] hover:text-[rgba(255,255,255,0.6)] opacity-0 group-hover:opacity-100 transition-opacity"
                 >
-                  <MoreVertical className="h-3.5 w-3.5" />
+                  <MoreVertical className="h-[14px] w-[14px]" />
                 </button>
-                <FolderOpen className="h-10 w-10 text-amber-400 pointer-events-none" />
-                <span className="text-xs text-slate-300 text-center truncate w-full pointer-events-none">
+                <FolderOpen className="h-8 w-8 text-[#fbbf24] pointer-events-none" />
+                <span className="text-[11px] text-[rgba(255,255,255,0.6)] text-center truncate w-full pointer-events-none">
                   {f.name}
                 </span>
                 {f.asset_count > 0 && (
-                  <span className="text-2xs text-slate-600 pointer-events-none">
+                  <span className="text-[10px] text-[rgba(255,255,255,0.25)] pointer-events-none">
                     {f.asset_count} item{f.asset_count !== 1 ? "s" : ""}
                   </span>
                 )}
@@ -728,7 +728,7 @@ export default function AssetManagerPage() {
             {currentAssets.map((a) => (
               <div
                 key={`asset-${a.id}`}
-                className="group flex flex-col items-center gap-1.5 p-3 rounded-lg border border-transparent hover:border-hud-border hover:bg-white/[0.02] cursor-pointer transition-colors relative"
+                className="group flex flex-col items-center gap-1.5 p-2.5 border border-transparent hover:border-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.02)] cursor-pointer transition-colors relative" style={{ borderRadius: '2px' }}
                 onDoubleClick={() => {
                   setSelectedAsset({ id: a.id, name: a.name, file: a.file });
                   navigate("/");
@@ -751,15 +751,15 @@ export default function AssetManagerPage() {
                       { type: "asset", id: a.id, name: a.name, fileUrl: a.file },
                     );
                   }}
-                  className="absolute top-1 right-1 p-0.5 text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-1 right-1 p-0.5 text-[rgba(255,255,255,0.2)] hover:text-[rgba(255,255,255,0.6)] opacity-0 group-hover:opacity-100 transition-opacity"
                 >
-                  <MoreVertical className="h-3.5 w-3.5" />
+                  <MoreVertical className="h-[14px] w-[14px]" />
                 </button>
-                <FileBox className="h-10 w-10 text-slate-400 pointer-events-none" />
-                <span className="text-xs text-slate-300 text-center truncate w-full pointer-events-none">
+                <FileBox className="h-8 w-8 text-[rgba(255,255,255,0.4)] pointer-events-none" />
+                <span className="text-[11px] text-[rgba(255,255,255,0.6)] text-center truncate w-full pointer-events-none">
                   {a.name}
                 </span>
-                <span className="text-2xs text-slate-600 pointer-events-none">
+                <span className="text-[10px] text-[rgba(255,255,255,0.25)] pointer-events-none">
                   {getExtension(a.file).replace(".", "").toUpperCase()}
                 </span>
               </div>
@@ -769,7 +769,7 @@ export default function AssetManagerPage() {
           /* ── List view ──────────────────────────────────────── */
           <div className="flex flex-col">
             {/* Header */}
-            <div className="grid grid-cols-[1fr_100px_140px] gap-2 px-3 py-1.5 text-2xs text-slate-600 uppercase tracking-wider border-b border-hud-border">
+            <div className="grid grid-cols-[1fr_100px_140px] gap-2 px-2.5 py-1 text-[10px] text-[rgba(255,255,255,0.25)] uppercase tracking-[0.1em] border-b border-[rgba(255,255,255,0.06)]">
               <span>Name</span>
               <span>Type</span>
               <span>Date</span>
@@ -777,9 +777,9 @@ export default function AssetManagerPage() {
 
             {/* New folder inline */}
             {newFolderName !== null && (
-              <div className="grid grid-cols-[1fr_100px_140px] gap-2 px-3 py-1.5 items-center border-b border-hud-border/50">
+              <div className="grid grid-cols-[1fr_100px_140px] gap-2 px-2.5 py-1 items-center border-b border-[rgba(255,255,255,0.04)]">
                 <div className="flex items-center gap-2">
-                  <FolderIcon className="h-4 w-4 text-amber-400 flex-shrink-0" />
+                  <FolderIcon className="h-[14px] w-[14px] text-[#fbbf24] flex-shrink-0" />
                   <input
                     ref={newFolderInputRef}
                     type="text"
@@ -791,11 +791,11 @@ export default function AssetManagerPage() {
                       if (e.key === "Escape") setNewFolderName(null);
                     }}
                     placeholder="Folder name"
-                    className="bg-transparent border border-accent-cyan/30 rounded px-1.5 py-0.5 text-xs text-slate-200 outline-none focus:border-accent-cyan/50 w-48"
+                    className="bg-transparent border border-[rgba(0,212,255,0.2)] px-1.5 py-0.5 text-[11px] text-[rgba(255,255,255,0.8)] outline-none focus:border-[rgba(0,212,255,0.4)] w-48" style={{ borderRadius: '2px' }}
                   />
                 </div>
-                <span className="text-xs text-slate-500">Folder</span>
-                <span className="text-xs text-slate-500">--</span>
+                <span className="text-[11px] text-[rgba(255,255,255,0.35)]">Folder</span>
+                <span className="text-[11px] text-[rgba(255,255,255,0.25)]">--</span>
               </div>
             )}
 
@@ -803,11 +803,11 @@ export default function AssetManagerPage() {
             {currentFolders.map((f) => (
               <div
                 key={`folder-${f.id}`}
-                className={`group grid grid-cols-[1fr_100px_140px] gap-2 px-3 py-1.5 items-center cursor-pointer transition-all border-b
+                className={`group grid grid-cols-[1fr_100px_140px] gap-2 px-2.5 py-1 items-center cursor-pointer transition-all border-b
                   ${
                     isFolderHighlighted(f.id)
-                      ? "border-accent-cyan bg-accent-cyan/10"
-                      : "border-hud-border/30 hover:bg-white/[0.02]"
+                      ? "border-[rgba(0,212,255,0.2)] bg-[rgba(0,212,255,0.05)]"
+                      : "border-[rgba(255,255,255,0.04)] hover:bg-[rgba(255,255,255,0.02)]"
                   }
                 `}
                 onDoubleClick={() => setCurrentFolder(f.id)}
@@ -822,18 +822,18 @@ export default function AssetManagerPage() {
                 {...folderDropProps(f.id)}
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <FolderIcon className="h-4 w-4 text-amber-400 flex-shrink-0 pointer-events-none" />
-                  <span className="text-xs text-slate-300 truncate pointer-events-none">
+                  <FolderIcon className="h-[14px] w-[14px] text-[#fbbf24] flex-shrink-0 pointer-events-none" />
+                  <span className="text-[11px] text-[rgba(255,255,255,0.6)] truncate pointer-events-none">
                     {f.name}
                   </span>
                   {f.asset_count > 0 && (
-                    <span className="text-2xs text-slate-600 flex-shrink-0 pointer-events-none">
+                    <span className="text-[10px] text-[rgba(255,255,255,0.25)] flex-shrink-0 pointer-events-none">
                       ({f.asset_count})
                     </span>
                   )}
                 </div>
-                <span className="text-xs text-slate-500 pointer-events-none">Folder</span>
-                <span className="text-xs text-slate-600 pointer-events-none">
+                <span className="text-[11px] text-[rgba(255,255,255,0.35)] pointer-events-none">Folder</span>
+                <span className="text-[11px] text-[rgba(255,255,255,0.25)] pointer-events-none">
                   {new Date(f.created_at).toLocaleDateString()}
                 </span>
               </div>
@@ -843,7 +843,7 @@ export default function AssetManagerPage() {
             {currentAssets.map((a) => (
               <div
                 key={`asset-${a.id}`}
-                className="group grid grid-cols-[1fr_100px_140px] gap-2 px-3 py-1.5 items-center hover:bg-white/[0.02] cursor-pointer transition-colors border-b border-hud-border/30"
+                className="group grid grid-cols-[1fr_100px_140px] gap-2 px-2.5 py-1 items-center hover:bg-[rgba(255,255,255,0.02)] cursor-pointer transition-colors border-b border-[rgba(255,255,255,0.04)]"
                 onDoubleClick={() => {
                   setSelectedAsset({ id: a.id, name: a.name, file: a.file });
                   navigate("/");
@@ -859,15 +859,15 @@ export default function AssetManagerPage() {
                 {...draggableProps("asset", a.id, a.name)}
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <FileBox className="h-4 w-4 text-slate-400 flex-shrink-0 pointer-events-none" />
-                  <span className="text-xs text-slate-300 truncate pointer-events-none">
+                  <FileBox className="h-[14px] w-[14px] text-[rgba(255,255,255,0.4)] flex-shrink-0 pointer-events-none" />
+                  <span className="text-[11px] text-[rgba(255,255,255,0.6)] truncate pointer-events-none">
                     {a.name}
                   </span>
                 </div>
-                <span className="text-xs text-slate-500 pointer-events-none">
+                <span className="text-[11px] text-[rgba(255,255,255,0.35)] pointer-events-none">
                   {getExtension(a.file).replace(".", "").toUpperCase() || "File"}
                 </span>
-                <span className="text-xs text-slate-600 pointer-events-none">
+                <span className="text-[11px] text-[rgba(255,255,255,0.25)] pointer-events-none">
                   {new Date(a.uploaded_at).toLocaleDateString()}
                 </span>
               </div>

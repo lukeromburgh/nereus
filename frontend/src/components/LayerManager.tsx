@@ -38,38 +38,38 @@ function ToggleRow({
     <button
       onClick={onToggle}
       disabled={disabled}
-      className={`group w-full flex items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-all duration-200 ${
+      className={`group w-full flex items-center gap-2 px-2 py-1.5 text-left transition-all duration-150 ${
         disabled
           ? "opacity-40 cursor-not-allowed"
           : enabled
-            ? "bg-white/[0.04] hover:bg-white/[0.06]"
-            : "hover:bg-white/[0.03]"
+            ? "bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.05)]"
+            : "hover:bg-[rgba(255,255,255,0.02)]"
       }`}
     >
       {/* Indicator dot */}
       <span
-        className="h-2 w-2 rounded-full shrink-0 transition-all duration-300"
+        className="h-1.5 w-1.5 shrink-0 transition-all duration-300"
         style={{
           backgroundColor: enabled ? color : "transparent",
-          border: `1.5px solid ${enabled ? color : "rgba(148, 163, 184, 0.3)"}`,
-          boxShadow: enabled ? `0 0 8px ${color}40` : "none",
+          border: `1.5px solid ${enabled ? color : "rgba(255, 255, 255, 0.15)"}`,
+          borderRadius: '1px',
         }}
       />
 
       <span
-        className={`flex-1 text-xs font-medium transition-colors duration-200 ${
-          enabled ? "text-slate-200" : "text-slate-500"
+        className={`flex-1 text-[11px] font-medium transition-colors duration-150 ${
+          enabled ? "text-[rgba(255,255,255,0.8)]" : "text-[rgba(255,255,255,0.35)]"
         }`}
       >
         {label}
       </span>
 
       {/* Toggle icon */}
-      <span className="text-slate-600 group-hover:text-slate-400 transition-colors">
+      <span className="text-[rgba(255,255,255,0.2)] group-hover:text-[rgba(255,255,255,0.45)] transition-colors">
         {enabled ? (
-          <Eye className="h-3.5 w-3.5" style={{ color }} />
+          <Eye className="h-[14px] w-[14px]" style={{ color }} />
         ) : (
-          <EyeOff className="h-3.5 w-3.5" />
+          <EyeOff className="h-[14px] w-[14px]" />
         )}
       </span>
     </button>
@@ -91,14 +91,14 @@ function SectionHeader({
   return (
     <button
       onClick={onToggle}
-      className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-white/[0.03] rounded transition-colors"
+      className="w-full flex items-center gap-1.5 px-2 py-1 hover:bg-[rgba(255,255,255,0.03)] transition-colors"
     >
-      <Icon className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-      <span className="hud-label flex-1 text-left">{label}</span>
+      <Icon className="h-[14px] w-[14px] text-[rgba(255,255,255,0.35)] shrink-0" />
+      <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)] flex-1 text-left">{label}</span>
       {open ? (
-        <ChevronDown className="h-3 w-3 text-slate-600" />
+        <ChevronDown className="h-[10px] w-[10px] text-[rgba(255,255,255,0.25)]" />
       ) : (
-        <ChevronRight className="h-3 w-3 text-slate-600" />
+        <ChevronRight className="h-[10px] w-[10px] text-[rgba(255,255,255,0.25)]" />
       )}
     </button>
   );
@@ -133,9 +133,9 @@ export function LayerManager() {
       initial={{ opacity: 0, x: -12 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
-      className="pointer-events-auto absolute left-3 top-20 z-20 w-48"
+      className="pointer-events-auto absolute left-2.5 top-16 z-20 w-44"
     >
-      <div className="glass-panel rounded-lg p-1.5">
+      <div className="bg-[rgba(17,19,24,0.9)] border border-[rgba(255,255,255,0.08)] p-1" style={{ borderRadius: '2px' }}>
         {/* ── Overlays ── */}
         <SectionHeader
           icon={Layers}
@@ -157,13 +157,13 @@ export function LayerManager() {
                   label="Flow Lines"
                   enabled={showFlowLines}
                   onToggle={toggleFlowLines}
-                  color="#60a5fa"
+                  color="#00d4ff"
                 />
                 <ToggleRow
                   label="Pressure"
                   enabled={showPressureMap}
                   onToggle={togglePressureMap}
-                  color="#fb7185"
+                  color="#ff6b35"
                 />
                 <ToggleRow
                   label="Vorticity"
@@ -183,7 +183,7 @@ export function LayerManager() {
         </AnimatePresence>
 
         {/* ── Colormap ── */}
-        <div className="mt-1 pt-1 border-t border-hud-border">
+        <div className="mt-0.5 pt-0.5 border-t border-[rgba(255,255,255,0.06)]">
           <SectionHeader
             icon={Palette}
             label="Colormap"
@@ -204,24 +204,26 @@ export function LayerManager() {
                     <button
                       key={cm}
                       onClick={() => setColormap(cm)}
-                      className={`flex items-center gap-1.5 px-2 py-1 rounded text-left transition-all duration-150 ${
+                      className={`flex items-center gap-1.5 px-1.5 py-0.5 text-left transition-all duration-150 ${
                         colormap === cm
-                          ? "bg-white/[0.08] ring-1 ring-accent/30"
-                          : "hover:bg-white/[0.04]"
+                          ? "bg-[rgba(255,255,255,0.06)] border border-[rgba(0,212,255,0.2)]"
+                          : "hover:bg-[rgba(255,255,255,0.03)] border border-transparent"
                       }`}
+                      style={{ borderRadius: '2px' }}
                     >
                       <div
-                        className="w-10 h-2 rounded-sm border border-hud-border shrink-0"
+                        className="w-10 h-1.5 border border-[rgba(255,255,255,0.08)] shrink-0"
                         style={{
                           background: colormapGradientCSS(cm, 32).replace(
                             "to top",
                             "to right",
                           ),
+                          borderRadius: '1px',
                         }}
                       />
                       <span
-                        className={`text-2xs font-mono capitalize ${
-                          colormap === cm ? "text-slate-200" : "text-slate-500"
+                        className={`text-[10px] font-mono capitalize ${
+                          colormap === cm ? "text-[rgba(255,255,255,0.8)]" : "text-[rgba(255,255,255,0.35)]"
                         }`}
                       >
                         {cm}
@@ -235,7 +237,7 @@ export function LayerManager() {
         </div>
 
         {/* ── Effects ── */}
-        <div className="mt-1 pt-1 border-t border-hud-border">
+        <div className="mt-0.5 pt-0.5 border-t border-[rgba(255,255,255,0.06)]">
           <SectionHeader
             icon={Sparkles}
             label="Effects"

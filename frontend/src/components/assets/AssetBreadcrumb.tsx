@@ -7,16 +7,16 @@ interface Props {
 
 export default function AssetBreadcrumb({ path, onNavigate }: Props) {
   return (
-    <nav className="flex items-center gap-1 text-xs min-w-0">
+    <nav className="flex items-center gap-1 text-[11px] min-w-0">
       {path.map((segment, i) => (
         <span key={segment.id ?? "root"} className="flex items-center gap-1 min-w-0">
-          {i > 0 && <ChevronRight className="h-3 w-3 text-slate-600 flex-shrink-0" />}
+          {i > 0 && <ChevronRight className="h-[14px] w-[14px] text-[rgba(255,255,255,0.2)] flex-shrink-0" />}
           <button
             onClick={() => onNavigate(segment.id)}
             className={`truncate transition-colors ${
               i === path.length - 1
-                ? "text-accent-cyan font-medium"
-                : "text-slate-400 hover:text-slate-200"
+                ? "text-nereus-accent font-medium"
+                : "text-[rgba(255,255,255,0.5)] hover:text-[rgba(255,255,255,0.8)]"
             }`}
           >
             {segment.name}

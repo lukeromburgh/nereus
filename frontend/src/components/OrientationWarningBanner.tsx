@@ -19,11 +19,11 @@ export function OrientationWarningBanner() {
   if (!wasAutoRotated && !isSideways) return null;
 
   return (
-    <div className="flex flex-col gap-1.5 px-3">
+    <div className="flex flex-col gap-1 px-2.5">
       {/* Red banner — geometry still looks wrong */}
       {isSideways && (
-        <div className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-          <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5 text-red-400" />
+        <div className="flex items-start gap-1.5 border border-[rgba(255,107,53,0.3)] bg-[rgba(255,107,53,0.06)] px-2.5 py-1.5 text-[11px] text-nereus-orange" style={{ borderRadius: '2px' }}>
+          <AlertTriangle className="h-[14px] w-[14px] flex-shrink-0 mt-0.5 text-nereus-orange" />
           <span>
             <strong>Geometry looks incorrect:</strong> chord (
             {chordM?.toFixed(3)} m) &lt; span ({spanM?.toFixed(3)} m). The foil
@@ -35,8 +35,8 @@ export function OrientationWarningBanner() {
 
       {/* Yellow banner — auto-rotation was applied */}
       {wasAutoRotated && !isSideways && (
-        <div className="flex items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-300">
-          <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5 text-yellow-400" />
+        <div className="flex items-start gap-1.5 border border-[rgba(255,190,36,0.3)] bg-[rgba(255,190,36,0.06)] px-2.5 py-1.5 text-[11px] text-[#fbbf24]" style={{ borderRadius: '2px' }}>
+          <AlertTriangle className="h-[14px] w-[14px] flex-shrink-0 mt-0.5 text-[#fbbf24]" />
           <span>
             Geometry was auto-rotated: original chord axis was{" "}
             <strong>{chordAxis}</strong>. Verify orientation before interpreting

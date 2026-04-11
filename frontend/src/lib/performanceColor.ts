@@ -8,12 +8,12 @@ export function getPerformanceColor(
   ldRatio: number | null | undefined
 ): string {
   if (ldRatio === null || ldRatio === undefined || Number.isNaN(ldRatio)) {
-    return "text-slate-600";
+    return "text-[rgba(255,255,255,0.25)]";
   }
 
-  if (ldRatio >= 5) return "text-accent-emerald"; // Excellent
-  if (ldRatio >= 3.5) return "text-accent-cyan"; // Very good
-  if (ldRatio >= 2) return "text-accent-glow"; // Good
-  if (ldRatio >= 1) return "text-yellow-500"; // Fair
-  return "text-accent-rose"; // Poor
+  if (ldRatio >= 5) return "text-nereus-accent"; // Excellent
+  if (ldRatio >= 3.5) return "text-nereus-accent"; // Very good
+  if (ldRatio >= 2) return "text-nereus-accent"; // Good
+  if (ldRatio >= 1) return "text-[#fbbf24]"; // Fair
+  return "text-nereus-orange"; // Poor
 }

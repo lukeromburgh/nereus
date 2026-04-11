@@ -11,9 +11,9 @@ export function FieldWithHint({ label, hint, children }: FieldWithHintProps) {
   const [showHint, setShowHint] = useState(false);
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-slate-300">{label}</span>
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[11px] font-medium text-[rgba(255,255,255,0.55)]">{label}</span>
         <button
           type="button"
           aria-label={`${label} help`}
@@ -21,22 +21,22 @@ export function FieldWithHint({ label, hint, children }: FieldWithHintProps) {
           onMouseLeave={() => setShowHint(false)}
           onFocus={() => setShowHint(true)}
           onBlur={() => setShowHint(false)}
-          className="text-slate-500 transition-colors hover:text-accent-cyan focus:outline-none"
+          className="text-[rgba(255,255,255,0.25)] transition-colors hover:text-nereus-accent focus:outline-none"
         >
-          <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+          <HelpCircle className="h-[14px] w-[14px]" aria-hidden="true" />
         </button>
       </div>
 
       <div
-        className={`overflow-hidden transition-all duration-200 ease-out rounded ${
+        className={`overflow-hidden transition-all duration-200 ease-out ${
           showHint
-            ? "max-h-32 opacity-100 py-1.5"
+            ? "max-h-32 opacity-100 py-1"
             : "max-h-0 opacity-0 py-0"
         }`}
         style={{ willChange: "max-height, opacity" }}
         aria-live="polite"
       >
-        <p className="text-2xs text-slate-400 bg-accent/5 border border-accent/15 rounded px-2 py-1.5">
+        <p className="text-[10px] text-[rgba(255,255,255,0.4)] bg-[rgba(0,212,255,0.04)] border border-[rgba(0,212,255,0.1)] px-2 py-1" style={{ borderRadius: '2px' }}>
           {hint}
         </p>
       </div>

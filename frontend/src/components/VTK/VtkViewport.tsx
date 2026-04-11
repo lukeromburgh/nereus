@@ -59,7 +59,7 @@ export function VtkViewport() {
 
   // ── Render ───────────────────────────────────────────────────────────
   return (
-    <div className="w-full h-full relative overflow-hidden bg-slate-950">
+    <div className="w-full h-full relative overflow-hidden bg-nereus-base">
       {/* Fixed CSS grid background — never rotates, like Unity's infinite grid */}
       <div
         className="absolute inset-0 z-0"
@@ -96,7 +96,7 @@ export function VtkViewport() {
       <ColorbarLegend />
 
       {/* Timeline controller (bottom bar) */}
-      <div className="absolute left-3 right-3 bottom-3 z-30">
+      <div className="absolute left-2.5 right-2.5 bottom-2.5 z-30">
         <TimelineController />
       </div>
     </div>
