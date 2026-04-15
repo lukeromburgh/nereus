@@ -61,26 +61,38 @@ def run_hydro_simulation(self, sim_id):
         patch_django_status(sim_id, "PENDING", error_log="Initializing Job Configuration...")
         os.makedirs(case_dir, exist_ok=True)
 
-        # Pull parameters from the Django API
+        # Pull parameters from the Django ORM (authoritative source — always available
+        # to the worker).  A fallback REST call is made to catch any extra fields that
+        # may only exist in the serialiser response.
+        from api.models import SimulationRun as _SR
+        run_obj_init = _SR.objects.get(id=sim_id)
+
         run_data = {}
         try:
             resp = requests.get(f"{DJANGO_API_URL}/{sim_id}/")
             if resp.status_code == 200:
                 run_data = resp.json()
         except Exception as e:
-            logger.warning(f"Could not fetch full parameter context: {e}")
+            logger.warning(f"Could not fetch REST parameter context (will use ORM): {e}")
 
-        velocity = run_data.get('velocity', 10.0)
-        density = run_data.get('water_density', 1025.0)
-        mesh_density = run_data.get('mesh_density', 1.0)
-        angle_of_attack = run_data.get('angle_of_attack', 0.0)
-        center_of_gravity = run_data.get('center_of_gravity', [0, 0, 0])
-        submersion_depth = run_data.get('submersion_depth', 0.5)
-        enable_layers = run_data.get('enable_layers', True)
-        enable_gravity = run_data.get('enable_gravity', True)
-        n_surface_layers = run_data.get('n_surface_layers', 5)
-        layer_expansion = run_data.get('layer_expansion', 1.2)
-        feature_level = run_data.get('feature_level', 4)
+        def _get(orm_attr, rest_key, default):
+            """Return ORM value if set, else REST value, else default."""
+            orm_val = getattr(run_obj_init, orm_attr, None)
+            if orm_val is not None:
+                return orm_val
+            return run_data.get(rest_key, default)
+
+        velocity = _get('velocity', 'velocity', 10.0)
+        density = _get('water_density', 'water_density', 1025.0)
+        mesh_density = _get('mesh_density', 'mesh_density', 1.0)
+        angle_of_attack = _get('angle_of_attack', 'angle_of_attack', 0.0)
+        center_of_gravity = _get('center_of_gravity', 'center_of_gravity', [0, 0, 0])
+        submersion_depth = _get('submersion_depth', 'submersion_depth', 0.5)
+        enable_layers = _get('enable_layers', 'enable_layers', True)
+        enable_gravity = _get('enable_gravity', 'enable_gravity', True)
+        n_surface_layers = _get('n_surface_layers', 'n_surface_layers', 5)
+        layer_expansion = _get('layer_expansion', 'layer_expansion', 1.2)
+        feature_level = _get('feature_level', 'feature_level', 4)
 
         try:
             angle_of_attack = float(angle_of_attack)
@@ -161,9 +173,9 @@ def run_hydro_simulation(self, sim_id):
             patch_django_status(sim_id, None, error_log="Applying orientation correction...")
             from api.models import SimulationRun
             try:
+                # Refresh from DB to get the latest pitch/roll/yaw values
                 run_obj = SimulationRun.objects.get(id=sim_id)
                 norm_info = normalise_stl_orientation(stl_path, run_obj)
-                run_obj.detected_chord_axis = norm_info['axes'].get('detected_chord_axis')
                 run_obj.detected_span_axis = norm_info['axes'].get('detected_span_axis')
                 run_obj.detected_up_axis = norm_info['axes'].get('detected_up_axis')
                 run_obj.chord_m = norm_info['dimensions'].get('chord_m')
@@ -243,18 +255,37 @@ def run_hydro_simulation(self, sim_id):
         )
         patch_django_status(sim_id, "MESHING", error_log="Mesh Generation Started...")
 
-        # Phase 3: Run snappyHexMesh
+        # Phase 3: Run meshing pipeline
         logs = ""
-        patch_django_status(sim_id, "MESHING", error_log="Running snappyHexMesh...")
+        patch_django_status(sim_id, "MESHING", error_log="Running blockMesh...")
         mesh_ok = _run_command(
-            ["chd", "->", "snappyHexMesh", "-overwrite"],
+            ["blockMesh"],
             cwd=case_dir,
             sim_id=sim_id,
             status_prefix="MESHING",
-            divergence_guardrail=True,
         )
         if not mesh_ok:
-            patch_django_status(sim_id, "FAILED", error_log="Mesh Generation Failed")
+            patch_django_status(sim_id, "FAILED", error_log="blockMesh Failed")
+            return "Mesh Failed"
+
+        patch_django_status(sim_id, "MESHING", error_log="Running surfaceFeatureExtract...")
+        _run_command(
+            ["surfaceFeatureExtract"],
+            cwd=case_dir,
+            sim_id=sim_id,
+            status_prefix="MESHING",
+        )
+
+        patch_django_status(sim_id, "MESHING", error_log="Running snappyHexMesh...")
+        mesh_ok = _run_command(
+            ["snappyHexMesh", "-overwrite"],
+            cwd=case_dir,
+            sim_id=sim_id,
+            status_prefix="MESHING",
+            divergence_guardrail=False,
+        )
+        if not mesh_ok:
+            patch_django_status(sim_id, "FAILED", error_log="snappyHexMesh Failed")
             return "Mesh Failed"
 
         # Phase 4: Run simpleFoam Solver
@@ -265,6 +296,7 @@ def run_hydro_simulation(self, sim_id):
             sim_id=sim_id,
             status_prefix="RUNNING",
             divergence_guardrail=True,
+            log_file=os.path.join(case_dir, "log.simpleFoam"),
         )
         if not ok:
             logger.error("simpleFoam failed")
@@ -386,8 +418,12 @@ def run_hydro_simulation(self, sim_id):
 # ── Internal helpers ────────────────────────────────────────────────────────────
 
 
-def _run_command(cmd, cwd, sim_id, status_prefix=None, divergence_guardrail=False):
-    """Run an OpenFOAM command and stream logs to Django."""
+def _run_command(cmd, cwd, sim_id, status_prefix=None, divergence_guardrail=False, log_file=None):
+    """Run an OpenFOAM command and stream logs to Django.
+
+    If *log_file* is given the full stdout is also written to that path so that
+    post-processing helpers (e.g. residuals parser) can read it afterwards.
+    """
     logs = []
     proc = subprocess.Popen(
         cmd,
@@ -401,29 +437,37 @@ def _run_command(cmd, cwd, sim_id, status_prefix=None, divergence_guardrail=Fals
     MAX_LINES = 2000
     div_threshold = 1e6
 
-    for line in iter(proc.stdout.readline, ""):
-        if not line:
-            break
-        logs.append(line.rstrip())
+    log_fh = open(log_file, 'w') if log_file else None
+    try:
+        for line in iter(proc.stdout.readline, ""):
+            if not line:
+                break
+            logs.append(line.rstrip())
+            if log_fh:
+                log_fh.write(line)
+                log_fh.flush()
 
-        if len(logs) > MAX_LINES:
-            logs = logs[-MAX_LINES:]
+            if len(logs) > MAX_LINES:
+                logs = logs[-MAX_LINES:]
 
-        if divergence_guardrail:
-            import re
-            res_match = re.search(r"GLOBALLY\s+(\d+\.\d+)", line)
-            if res_match:
-                try:
-                    residual = float(res_match.group(1))
-                    if residual > div_threshold:
-                        logger.error(f"Divergence detected: residual={residual}")
-                        proc.terminate()
-                        raise DivergenceError(f"Residual exploded to {residual}")
-                except ValueError:
-                    pass
+            if divergence_guardrail:
+                import re
+                res_match = re.search(r"GLOBALLY\s+(\d+\.\d+)", line)
+                if res_match:
+                    try:
+                        residual = float(res_match.group(1))
+                        if residual > div_threshold:
+                            logger.error(f"Divergence detected: residual={residual}")
+                            proc.terminate()
+                            raise DivergenceError(f"Residual exploded to {residual}")
+                    except ValueError:
+                        pass
 
-        if len(logs) % 20 == 0 and status_prefix:
-            patch_django_status(sim_id, status_prefix, error_log=logs[-1])
+            if len(logs) % 20 == 0 and status_prefix:
+                patch_django_status(sim_id, status_prefix, error_log=logs[-1])
+    finally:
+        if log_fh:
+            log_fh.close()
 
     proc.wait()
     if status_prefix:

@@ -757,10 +757,14 @@ def analyse_tip_vortex(vol_mesh, foil_surface, foil_bbox, run):
 
 
 def _parse_simplefoam_residuals(case_dir) -> list:
-    """Parse simpleFoam solver residuals from log file.
+    """Parse simpleFoam (foamRun) solver residuals from log file.
+
+    Handles OpenFOAM 11 log format:
+      Time = 1s
+      smoothSolver:  Solving for Ux, Initial residual = 0.123, Final residual = ...
 
     Returns:
-        list: Convergence series with iteration, time, and residual values.
+        list: Convergence series with iteration, time, and max initial residual.
     """
     import re
     from pathlib import Path
@@ -771,12 +775,14 @@ def _parse_simplefoam_residuals(case_dir) -> list:
 
     series = []
     current_time = None
-    current_iteration = None
     current_residuals = {}
 
+    # Matches "Time = 1s" or "Time = 1.5" (unit suffix optional)
     time_pattern = re.compile(r"^Time\s*=\s*([\d.eE+]+)")
-    iter_pattern = re.compile(r"^\s*Iteration\s+(\d+)")
-    residual_pattern = re.compile(r"^\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([\d.eE+-]+)")
+    # Matches "Solving for Ux, Initial residual = 0.123, ..."
+    residual_pattern = re.compile(
+        r"Solving for (\w+),\s*Initial residual\s*=\s*([\d.eE+-]+)"
+    )
 
     try:
         with open(log_file, 'r') as f:
@@ -784,9 +790,9 @@ def _parse_simplefoam_residuals(case_dir) -> list:
                 time_match = time_pattern.match(line)
                 if time_match:
                     if current_time is not None and current_residuals:
-                        max_residual = max(current_residuals.values()) if current_residuals else 0.0
+                        max_residual = max(current_residuals.values())
                         series.append({
-                            "iteration": current_iteration or len(series),
+                            "iteration": len(series),
                             "time": current_time,
                             "residual": max_residual,
                         })
@@ -794,23 +800,19 @@ def _parse_simplefoam_residuals(case_dir) -> list:
                     current_residuals = {}
                     continue
 
-                iter_match = iter_pattern.match(line)
-                if iter_match:
-                    current_iteration = int(iter_match.group(1))
-                    continue
-
-                residual_match = residual_pattern.match(line)
-                if residual_match and current_iteration is not None:
+                residual_match = residual_pattern.search(line)
+                if residual_match and current_time is not None:
                     field = residual_match.group(1)
                     value = float(residual_match.group(2))
-                    current_residuals[field] = value
+                    # Keep the first (i.e. initial) value for each field per step
+                    if field not in current_residuals:
+                        current_residuals[field] = value
 
         if current_time is not None and current_residuals:
-            max_residual = max(current_residuals.values()) if current_residuals else 0.0
             series.append({
-                "iteration": current_iteration or len(series),
+                "iteration": len(series),
                 "time": current_time,
-                "residual": max_residual,
+                "residual": max(current_residuals.values()),
             })
     except Exception as e:
         logger.warning(f"_parse_simplefoam_residuals failed: {e}")

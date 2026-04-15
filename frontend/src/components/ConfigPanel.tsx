@@ -70,6 +70,9 @@ export function ConfigPanel() {
       center_of_gravity: centerOfGravity,
       project: projectId,
       wave_height: 0.0,
+      pitch: useSimStore.getState().pitch,
+      roll: useSimStore.getState().roll,
+      yaw: useSimStore.getState().yaw,
     };
 
     if (selectedAssetId) {

@@ -35,53 +35,51 @@ class ForcesParser:
         if candidates:
             self.forces_file = candidates[0]
 
+    # Pre-compiled pattern to extract all floats from a data line.
+    # OpenFOAM 11 forces.dat format (one row per time step):
+    #   time  ((p_fx p_fy p_fz) (v_fx v_fy v_fz))  ((p_mx p_my p_mz) (v_mx v_my v_mz))
+    _FLOAT_RE = re.compile(r'[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?')
+
     def parse(self) -> dict:
-        """Parse forces.dat and return dictionary keyed by time."""
+        """Parse forces.dat and return dictionary keyed by time.
+
+        Handles the OpenFOAM 11 columnar format where each data line contains
+        13 floats representing: time, pressure force (3), viscous force (3),
+        pressure moment (3), viscous moment (3).  Total force/moment for each
+        axis is the sum of the pressure and viscous contributions.
+        """
         if not self.forces_file or not os.path.exists(self.forces_file):
             logger.warning(f"forces.dat not found in {self.forces_dir}")
             return {}
 
         forces_by_time = {}
-        current_time = None
-        current_data = {}
-        header_pattern = re.compile(r'^#\s*Time\s*=\s*([\d.eE+]+)')
 
         try:
             with open(self.forces_file, 'r') as f:
                 for line in f:
-                    time_match = header_pattern.match(line)
-                    if time_match:
-                        if current_time is not None and current_data:
-                            forces_by_time[current_time] = current_data
-                        current_time = float(time_match.group(1))
-                        current_data = {}
+                    # Skip comment / header lines
+                    if line.lstrip().startswith('#'):
                         continue
-                    if current_time is None:
+                    nums = self._FLOAT_RE.findall(line)
+                    if len(nums) < 13:
                         continue
-                    if line.strip().startswith('forces'):
-                        parts = line.split()
-                        if len(parts) >= 5:
-                            try:
-                                fx = float(parts[2])
-                                fy = float(parts[3])
-                                fz = float(parts[4])
-                                current_data.update({'Fx': fx, 'Fy': fy, 'Fz': fz})
-                            except (ValueError, IndexError):
-                                pass
+                    try:
+                        vals = [float(n) for n in nums[:13]]
+                    except ValueError:
                         continue
-                    if line.strip().startswith('Moments'):
-                        parts = line.split()
-                        if len(parts) >= 5:
-                            try:
-                                mx = float(parts[2])
-                                my = float(parts[3])
-                                mz = float(parts[4])
-                                current_data.update({'Mx': mx, 'My': my, 'Mz': mz})
-                            except (ValueError, IndexError):
-                                pass
-                        continue
-            if current_time is not None and current_data:
-                forces_by_time[current_time] = current_data
+                    t = vals[0]
+                    # indices 1-3: pressure force; 4-6: viscous force
+                    fx = vals[1] + vals[4]
+                    fy = vals[2] + vals[5]
+                    fz = vals[3] + vals[6]
+                    # indices 7-9: pressure moment; 10-12: viscous moment
+                    mx = vals[7] + vals[10]
+                    my = vals[8] + vals[11]
+                    mz = vals[9] + vals[12]
+                    forces_by_time[t] = {
+                        'Fx': fx, 'Fy': fy, 'Fz': fz,
+                        'Mx': mx, 'My': my, 'Mz': mz,
+                    }
         except Exception as e:
             logger.error(f"Error parsing forces.dat: {e}")
         return forces_by_time
