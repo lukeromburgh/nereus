@@ -1,7 +1,5 @@
 """Status patching helpers and custom exceptions."""
 import logging
-import requests
-from config import DJANGO_API_URL
 
 logger = logging.getLogger(__name__)
 
@@ -60,26 +58,19 @@ def patch_django_status(
         return True
 
     try:
-        response = requests.patch(f"{DJANGO_API_URL}/{sim_id}/", json=payload, timeout=10)
-        response.raise_for_status()
-        return True
-    except requests.exceptions.ConnectionError as e:
-        logger.error(f"[sim_id={sim_id}] Failed to connect to Django API: {e}")
+        from api.models import SimulationRun
+
+        updated = SimulationRun.objects.filter(id=sim_id).update(**payload)
+        if updated:
+            return True
+
+        message = f"SimulationRun {sim_id} not found while updating status"
+        logger.error(message)
         if raise_on_failure:
-            raise StatusPatchError(f"Connection failed for sim {sim_id}: {e}") from e
-        return False
-    except requests.exceptions.Timeout as e:
-        logger.error(f"[sim_id={sim_id}] Django API request timed out: {e}")
-        if raise_on_failure:
-            raise StatusPatchError(f"Timeout for sim {sim_id}: {e}") from e
-        return False
-    except requests.exceptions.HTTPError as e:
-        logger.error(f"[sim_id={sim_id}] Django API returned error {e.response.status_code}: {e}")
-        if raise_on_failure:
-            raise StatusPatchError(f"HTTP error for sim {sim_id}: {e}") from e
+            raise StatusPatchError(message)
         return False
     except Exception as e:
-        logger.error(f"[sim_id={sim_id}] Unexpected error updating Django API: {e}")
+        logger.error(f"[sim_id={sim_id}] Unexpected error updating Django ORM: {e}")
         if raise_on_failure:
             raise StatusPatchError(f"Unexpected error for sim {sim_id}: {e}") from e
         return False

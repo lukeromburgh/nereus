@@ -2,10 +2,25 @@ import os
 import shutil
 from rest_framework import viewsets, parsers, status
 from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
+from django.contrib.auth import authenticate, login, logout
 from django.conf import settings
+from django.middleware.csrf import get_token
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
+from .access import ensure_user_workspace, get_accessible_projects
 from .models import Folder, HydrofoilAsset, Project, SimulationRun
-from .serializers import FolderSerializer, HydrofoilAssetSerializer, ProjectSerializer, SimulationRunSerializer
+from .permissions import IsOwnerOrTeamMember
+from .serializers import (
+    CurrentUserSerializer,
+    FolderSerializer,
+    HydrofoilAssetSerializer,
+    LoginSerializer,
+    ProjectSerializer,
+    SimulationRunSerializer,
+)
 from django.db import transaction
 
 # Import the Celery app to dispatch tasks by name.
@@ -13,17 +28,69 @@ from django.db import transaction
 # worker implementation when django.setup() runs inside the worker.
 from nereus_core.celery import app as celery_app
 
+
+@method_decorator(ensure_csrf_cookie, name='dispatch')
+class CsrfCookieView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({'csrfToken': get_token(request)})
+
+
+class SessionLoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = authenticate(
+            request,
+            username=serializer.validated_data['username'],
+            password=serializer.validated_data['password'],
+        )
+        if user is None:
+            return Response(
+                {'detail': 'Invalid username or password.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        login(request, user)
+        ensure_user_workspace(user)
+        return Response(CurrentUserSerializer(user).data)
+
+
+class SessionLogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        logout(request)
+        return Response({'detail': 'Logged out.'}, status=status.HTTP_200_OK)
+
+
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ensure_user_workspace(request.user)
+        return Response(CurrentUserSerializer(request.user).data)
+
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
+    permission_classes = [IsOwnerOrTeamMember]
+
+    def get_queryset(self):
+        return get_accessible_projects(self.request.user).order_by('name')
 
 class HydrofoilAssetViewSet(viewsets.ModelViewSet):
     queryset = HydrofoilAsset.objects.all()
     serializer_class = HydrofoilAssetSerializer
+    permission_classes = [IsOwnerOrTeamMember]
     parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = HydrofoilAsset.objects.filter(project__in=get_accessible_projects(self.request.user)).select_related('project', 'folder')
         project_id = self.request.query_params.get('project')
         if project_id:
             qs = qs.filter(project_id=project_id)
@@ -83,9 +150,10 @@ class HydrofoilAssetViewSet(viewsets.ModelViewSet):
 class FolderViewSet(viewsets.ModelViewSet):
     queryset = Folder.objects.all()
     serializer_class = FolderSerializer
+    permission_classes = [IsOwnerOrTeamMember]
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = Folder.objects.filter(project__in=get_accessible_projects(self.request.user)).select_related('project', 'parent')
         project_id = self.request.query_params.get('project')
         if project_id:
             qs = qs.filter(project_id=project_id)
@@ -118,11 +186,16 @@ class FolderViewSet(viewsets.ModelViewSet):
         if not project_id:
             return Response({'error': 'project query param required'}, status=status.HTTP_400_BAD_REQUEST)
 
+        try:
+            project = get_accessible_projects(request.user).get(id=project_id)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
         root_folders = Folder.objects.filter(
-            project_id=project_id, parent__isnull=True,
+            project=project, parent__isnull=True,
         ).prefetch_related('children', 'assets', 'children__children', 'children__assets').order_by('name')
         root_assets = HydrofoilAsset.objects.filter(
-            project_id=project_id, folder__isnull=True,
+            project=project, folder__isnull=True,
         ).order_by('name')
 
         return Response({
@@ -161,6 +234,14 @@ class FolderViewSet(viewsets.ModelViewSet):
 class SimulationRunViewSet(viewsets.ModelViewSet):
     queryset = SimulationRun.objects.all()
     serializer_class = SimulationRunSerializer
+    permission_classes = [IsOwnerOrTeamMember]
+
+    def get_queryset(self):
+        qs = SimulationRun.objects.filter(project__in=get_accessible_projects(self.request.user)).select_related('project', 'asset')
+        project_id = self.request.query_params.get('project')
+        if project_id:
+            qs = qs.filter(project_id=project_id)
+        return qs
 
     @action(detail=True, methods=['get'])
     def analysis(self, request, pk=None):

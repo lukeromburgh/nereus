@@ -1,11 +1,54 @@
 from rest_framework import serializers
+from django.contrib.auth import get_user_model
 from django.conf import settings
-from .models import Folder, HydrofoilAsset, Project, SimulationRun
+from .models import Folder, HydrofoilAsset, Project, SimulationRun, Team
+from .access import get_user_teams, user_can_access_project
+
+
+User = get_user_model()
+
+
+class TeamSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Team
+        fields = ['id', 'name']
+
+
+class CurrentUserSerializer(serializers.ModelSerializer):
+    teams = TeamSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'teams']
+
+
+class LoginSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150)
+    password = serializers.CharField(trim_whitespace=False)
 
 class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at']
+
+    def validate(self, data):
+        request = self.context.get('request')
+        team = data.get('team') or (self.instance and self.instance.team)
+
+        if request is None or request.user.is_superuser:
+            return data
+
+        user_teams = get_user_teams(request.user)
+        if team is None:
+            team = user_teams.order_by('id').first()
+            if team is None:
+                raise serializers.ValidationError({'team': 'You must belong to a team before creating a project.'})
+            data['team'] = team
+        elif not user_teams.filter(id=team.id).exists():
+            raise serializers.ValidationError({'team': 'Project team must be one of your teams.'})
+
+        return data
 
 class HydrofoilAssetSerializer(serializers.ModelSerializer):
     class Meta:
@@ -24,8 +67,14 @@ class HydrofoilAssetSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
+        request = self.context.get('request')
         folder = data.get('folder')
         project = data.get('project') or (self.instance and self.instance.project)
+
+        if request is not None and not request.user.is_superuser and project is not None:
+            if not user_can_access_project(request.user, project):
+                raise serializers.ValidationError({'project': 'You do not have access to this project.'})
+
         if folder and project and folder.project_id != project.id:
             raise serializers.ValidationError(
                 {"folder": "Folder must belong to the same project as the asset."}
@@ -60,10 +109,15 @@ class FolderSerializer(serializers.ModelSerializer):
         return count
 
     def validate(self, data):
+        request = self.context.get('request')
         # Prevent duplicate folder names at the same level within a project
         project = data.get('project') or (self.instance and self.instance.project)
         parent = data.get('parent', self.instance.parent if self.instance else None)
         name = data.get('name', self.instance.name if self.instance else None)
+
+        if request is not None and not request.user.is_superuser and project is not None:
+            if not user_can_access_project(request.user, project):
+                raise serializers.ValidationError({'project': 'You do not have access to this project.'})
 
         if project and name:
             qs = Folder.objects.filter(project=project, parent=parent, name=name)
@@ -111,6 +165,20 @@ class SimulationRunSerializer(serializers.ModelSerializer):
             'orientation_preview_url',
             'geometry_dimensions',
         ]
+
+    def validate(self, data):
+        request = self.context.get('request')
+        project = data.get('project') or (self.instance and self.instance.project)
+        asset = data.get('asset') or (self.instance and self.instance.asset)
+
+        if request is not None and not request.user.is_superuser and project is not None:
+            if not user_can_access_project(request.user, project):
+                raise serializers.ValidationError({'project': 'You do not have access to this project.'})
+
+        if asset is not None and project is not None and asset.project_id != project.id:
+            raise serializers.ValidationError({'asset': 'Asset must belong to the selected project.'})
+
+        return data
 
     def get_visualization_urls(self, obj):
         manifest = obj.file_manifest

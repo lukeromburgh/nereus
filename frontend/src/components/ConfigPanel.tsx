@@ -1,4 +1,4 @@
-import axios from "axios";
+import apiClient, { isAxiosError } from "../lib/apiClient";
 import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Settings, Zap, Repeat } from "lucide-react";
@@ -80,13 +80,13 @@ export function ConfigPanel() {
     }
 
     try {
-      const response = await axios.post("http://localhost:8000/api/runs/", payload);
+      const response = await apiClient.post("/api/runs/", payload);
       startNewSim(response.data.id);
       const runId = response.data?.id != null ? String(response.data.id).slice(0, 6) : "unknown";
       toast.success(`Simulation started (ID: ${runId})`);
     } catch (error) {
       console.error("Failed to launch simulation", error);
-      const message = axios.isAxiosError(error)
+      const message = isAxiosError(error)
         ? (error.response?.data as { detail?: string })?.detail || error.message
         : error instanceof Error ? error.message : "Failed to launch simulation";
       toast.error(message);
@@ -129,7 +129,7 @@ export function ConfigPanel() {
     if (selectedAssetId) payload.asset = selectedAssetId;
 
     try {
-      const response = await axios.post("http://localhost:8000/api/runs/sweep/", payload);
+      const response = await apiClient.post("/api/runs/sweep/", payload);
       const count = response.data?.count ?? 0;
       toast.success(`AoA sweep launched: ${count} runs queued`);
       // Select the first run from the sweep
@@ -138,7 +138,7 @@ export function ConfigPanel() {
       }
     } catch (error) {
       console.error("Failed to launch sweep", error);
-      const message = axios.isAxiosError(error)
+      const message = isAxiosError(error)
         ? (error.response?.data as { error?: string })?.error || error.message
         : error instanceof Error ? error.message : "Failed to launch sweep";
       toast.error(message);

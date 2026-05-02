@@ -1,5 +1,5 @@
 import { useState } from "react";
-import axios from "axios";
+import apiClient, { isAxiosError } from "../lib/apiClient";
 import { toast } from "@/lib/toast";
 
 export interface UseRunSimulationResult {
@@ -14,7 +14,7 @@ export function useRunSimulation(): UseRunSimulationResult {
     setIsLoading(true);
 
     try {
-      const response = await axios.post("http://localhost:8000/api/runs/", runData);
+      const response = await apiClient.post("/api/runs/", runData);
       const result = response?.data;
 
       const id = result?.id;
@@ -26,7 +26,7 @@ export function useRunSimulation(): UseRunSimulationResult {
     } catch (error) {
       let message = "Failed to start simulation";
 
-      if (axios.isAxiosError(error)) {
+      if (isAxiosError(error)) {
         const responseData = (error.response?.data as any) ?? {};
         message =
           (typeof responseData?.detail === "string" && responseData.detail) ||

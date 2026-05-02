@@ -1,12 +1,10 @@
-import axios from "axios";
+import apiClient from "./apiClient";
 import type { Folder, FolderTree, HydrofoilAsset } from "../types/assets";
-
-const BASE = "http://localhost:8000/api";
 
 export const assetApi = {
   // ---------- Folders ----------
   getFolderTree: (projectId: number) =>
-    axios.get<FolderTree>(`${BASE}/folders/tree/`, {
+    apiClient.get<FolderTree>(`/api/folders/tree/`, {
       params: { project: projectId },
     }),
 
@@ -14,20 +12,20 @@ export const assetApi = {
     project: number;
     name: string;
     parent?: number | null;
-  }) => axios.post<Folder>(`${BASE}/folders/`, data),
+  }) => apiClient.post<Folder>(`/api/folders/`, data),
 
   renameFolder: (id: number, name: string) =>
-    axios.patch<Folder>(`${BASE}/folders/${id}/`, { name }),
+    apiClient.patch<Folder>(`/api/folders/${id}/`, { name }),
 
   moveFolder: (id: number, parent: number | null) =>
-    axios.patch<Folder>(`${BASE}/folders/${id}/move/`, { parent }),
+    apiClient.patch<Folder>(`/api/folders/${id}/move/`, { parent }),
 
   deleteFolder: (id: number, force = false) =>
-    axios.delete(`${BASE}/folders/${id}/${force ? "?force=true" : ""}`),
+    apiClient.delete(`/api/folders/${id}/${force ? "?force=true" : ""}`),
 
   // ---------- Assets ----------
   uploadAsset: (data: FormData, onProgress?: (pct: number) => void) =>
-    axios.post<HydrofoilAsset>(`${BASE}/assets/`, data, {
+    apiClient.post<HydrofoilAsset>(`/api/assets/`, data, {
       headers: { "Content-Type": "multipart/form-data" },
       onUploadProgress: (e) => {
         if (e.total && onProgress)
@@ -36,11 +34,11 @@ export const assetApi = {
     }),
 
   renameAsset: (id: number, name: string) =>
-    axios.patch<HydrofoilAsset>(`${BASE}/assets/${id}/rename/`, { name }),
+    apiClient.patch<HydrofoilAsset>(`/api/assets/${id}/rename/`, { name }),
 
   moveAsset: (id: number, folder: number | null) =>
-    axios.patch<HydrofoilAsset>(`${BASE}/assets/${id}/move/`, { folder }),
+    apiClient.patch<HydrofoilAsset>(`/api/assets/${id}/move/`, { folder }),
 
   deleteAsset: (id: number, force = false) =>
-    axios.delete(`${BASE}/assets/${id}/${force ? "?force=true" : ""}`),
+    apiClient.delete(`/api/assets/${id}/${force ? "?force=true" : ""}`),
 };

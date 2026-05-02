@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import AppShell from "./components/AppShell";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import LoginPage from "./pages/LoginPage";
+import { AuthProvider, RequireAuth } from "./lib/auth";
 
 // Lazy-loaded route pages — each is a heavy subtree (VTK viewport, drag-and-drop
 // tree, dual-viewport comparison). Loading them on demand instead of eagerly
@@ -23,35 +25,44 @@ const PageFallback = () => (
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter>
-      <Routes>
-        <Route element={<AppShell />}>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
           <Route
-            path="/"
             element={
-              <Suspense fallback={<PageFallback />}>
-                <SimulationPage />
-              </Suspense>
+              <RequireAuth>
+                <AppShell />
+              </RequireAuth>
             }
-          />
-          <Route
-            path="/assets"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <AssetManagerPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="/comparison"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <RunComparisonPage />
-              </Suspense>
-            }
-          />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+          >
+            <Route
+              path="/"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <SimulationPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/assets"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <AssetManagerPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/comparison"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <RunComparisonPage />
+                </Suspense>
+              }
+            />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   </StrictMode>,
 );

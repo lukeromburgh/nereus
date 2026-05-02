@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Terminal, Download, Circle } from "lucide-react";
+import { toApiUrl } from "../lib/apiClient";
 import { useSimStore } from "../store/useSimStore";
 import {
   parseAllResiduals,
@@ -64,9 +65,7 @@ export function LogConsole() {
     [uxSeries],
   );
 
-  const resultUrl = resultMeshPath
-    ? `http://localhost:8000${resultMeshPath}`
-    : null;
+  const resultUrl = toApiUrl(resultMeshPath);
 
   const statusConfig = {
     COMPLETED: {

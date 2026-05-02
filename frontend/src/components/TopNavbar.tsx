@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
-import axios from "axios";
 import { Upload, RefreshCw, Waves } from "lucide-react";
+import apiClient from "../lib/apiClient";
 import { useSimStore } from "../store/useSimStore";
 
 interface TopNavbarProps {
@@ -33,8 +33,8 @@ export function TopNavbar({ onRefresh }: TopNavbarProps) {
     form.append("file", file);
 
     try {
-      const { data } = await axios.post(
-        "http://localhost:8000/api/assets/",
+      const { data } = await apiClient.post(
+        "/api/assets/",
         form,
         {
           headers: { "Content-Type": "multipart/form-data" },

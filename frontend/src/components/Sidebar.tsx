@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import axios from "axios";
 import { Box, PlayCircle, Circle, Loader2, ChevronRight, Folder as FolderIcon, FolderOpen, FileBox } from "lucide-react";
 import { useSimStore } from "../store/useSimStore";
+import apiClient from "../lib/apiClient";
 import { assetApi } from "../lib/assetApi";
 import type { Folder, HydrofoilAsset } from "../types/assets";
 
@@ -162,7 +162,7 @@ export function Sidebar({ refreshNonce }: { refreshNonce: number }) {
       try {
         const [treeResp, runsResp] = await Promise.all([
           assetApi.getFolderTree(projectId),
-          axios.get<SimulationRun[]>("http://localhost:8000/api/runs/"),
+          apiClient.get<SimulationRun[]>("/api/runs/"),
         ]);
         if (cancelled) return;
         setRootFolders(treeResp.data.folders);
@@ -195,7 +195,7 @@ export function Sidebar({ refreshNonce }: { refreshNonce: number }) {
   const handleSelectRun = async (runId: number) => {
     selectSim(runId);
     try {
-      const { data } = await axios.get(`http://localhost:8000/api/runs/${runId}/`);
+      const { data } = await apiClient.get(`/api/runs/${runId}/`);
       updateSim(data);
     } catch (err) {
       console.error("Failed to load run", err);

@@ -94,6 +94,7 @@ interface SimulationState {
 
   // MVP Project/Asset context
   projectId: number;
+  setProjectId: (id: number) => void;
   selectedAssetId: number | null;
   selectedAssetName: string | null;
   selectedAssetFileUrl: string | null;
@@ -265,6 +266,13 @@ export const useSimStore = create<SimulationState>((set) => ({
   toggleSSAO: () => set((state) => ({ enableSSAO: !state.enableSSAO })),
 
   projectId: 1,
+  setProjectId: (id) =>
+    set(() => ({
+      projectId: id,
+      selectedAssetId: null,
+      selectedAssetName: null,
+      selectedAssetFileUrl: null,
+    })),
   selectedAssetId: null,
   selectedAssetName: null,
   selectedAssetFileUrl: null,

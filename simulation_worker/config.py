@@ -25,12 +25,6 @@ app.conf.update(
     broker_connection_retry_on_startup=True,
 )
 
-# API endpoints
-DJANGO_API_URL = os.environ.get(
-    'DJANGO_API_URL',
-    'http://host.docker.internal:8000/api/runs',
-)
-
 DJANGO_MEDIA_ROOT = os.environ.get('DJANGO_MEDIA_ROOT', '/data/media')
 
-__all__ = ['app', 'DJANGO_API_URL', 'DJANGO_MEDIA_ROOT', 'broker_url', 'result_backend']
+__all__ = ['app', 'DJANGO_MEDIA_ROOT', 'broker_url', 'result_backend']

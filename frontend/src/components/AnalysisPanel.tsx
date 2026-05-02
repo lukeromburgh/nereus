@@ -20,6 +20,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import { useSimStore } from "../store/useSimStore";
+import { toApiUrl } from "../lib/apiClient";
 import { computeCoefficients } from "../lib/coefficients";
 import {
   parseAllResiduals,
@@ -305,9 +306,7 @@ export function AnalysisPanel() {
   // Multi-field residuals from logs
   const residualEntries = useMemo(() => parseAllResiduals(logs), [logs]);
 
-  const resultUrl = resultMeshPath
-    ? `http://localhost:8000${resultMeshPath}`
-    : null;
+  const resultUrl = toApiUrl(resultMeshPath);
 
   const handleExportMetrics = () => {
     const csv = metricsToCSV(augmentedData as Record<string, unknown>[], [

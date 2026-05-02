@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import axios from "axios";
+import apiClient, { isAxiosError } from "./lib/apiClient";
 import { AnimatePresence, motion } from "framer-motion";
 import { Upload, RefreshCw, PanelLeftClose, PanelLeftOpen, AlertCircle } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
@@ -58,7 +58,7 @@ function SimulationToolbar({ onRefresh }: { onRefresh: () => void }) {
     form.append("file", file);
 
     try {
-      const { data } = await axios.post("http://localhost:8000/api/assets/", form, {
+      const { data } = await apiClient.post("/api/assets/", form, {
         headers: { "Content-Type": "multipart/form-data" },
         onUploadProgress: (e) => {
           if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100));
@@ -72,7 +72,7 @@ function SimulationToolbar({ onRefresh }: { onRefresh: () => void }) {
       console.error("Asset upload failed", err);
       setUploadState("error");
       let errorMessage = "Upload failed";
-      if (axios.isAxiosError(err) && err.response?.data?.detail) {
+      if (isAxiosError(err) && err.response?.data?.detail) {
         errorMessage = err.response.data.detail;
       } else if (err instanceof Error) {
         errorMessage = err.message;
@@ -187,8 +187,8 @@ export default function SimulationPage() {
     async function poll() {
       if (cancelled) return;
       try {
-        const { data } = await axios.get(
-          `http://localhost:8000/api/runs/${activeSimId}/`,
+        const { data } = await apiClient.get(
+          `/api/runs/${activeSimId}/`,
         );
         if (cancelled) return;
         updateSim(data);
@@ -216,8 +216,8 @@ export default function SimulationPage() {
       if (status !== "COMPLETED") { clearAnalysis(); return; }
 
       try {
-        const { data } = await axios.get(
-          `http://localhost:8000/api/runs/${activeSimId}/analysis/`,
+        const { data } = await apiClient.get(
+          `/api/runs/${activeSimId}/analysis/`,
         );
         if (!cancelled) setAnalysisData(data);
       } catch (err) {
@@ -275,7 +275,7 @@ export default function SimulationPage() {
     form.append("file", file);
 
     try {
-      const { data } = await axios.post("http://localhost:8000/api/assets/", form, {
+      const { data } = await apiClient.post("/api/assets/", form, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       if (typeof data?.id === "number") setSelectedAsset(data);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import axios from "axios";
+import apiClient from "../lib/apiClient";
 import { useSimStore } from "../store/useSimStore";
 import { VtkViewport } from "../components/VtkViewport-DEPRECATED";
 import { useToolbar } from "../hooks/useToolbar";
@@ -140,8 +140,8 @@ const RunComparisonPage: React.FC = () => {
 
   // Load all completed runs for dropdowns
   useEffect(() => {
-    axios
-      .get<SimulationRun[]>("http://localhost:8000/api/runs/")
+    apiClient
+      .get<SimulationRun[]>("/api/runs/")
       .then(({ data }) => {
         const completed = data
           .filter((r) => r.project === projectId && r.status === "COMPLETED")
@@ -167,8 +167,8 @@ const RunComparisonPage: React.FC = () => {
     setCompared(false);
     try {
       const [{ data: dataA }, { data: dataB }] = await Promise.all([
-        axios.get(`http://localhost:8000/api/runs/${runAId}/`),
-        axios.get(`http://localhost:8000/api/runs/${runBId}/`),
+        apiClient.get(`/api/runs/${runAId}/`),
+        apiClient.get(`/api/runs/${runBId}/`),
       ]);
       setMetricsA(extractMetrics(dataA));
       setMetricsB(extractMetrics(dataB));

@@ -8,10 +8,10 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file if it exists, otherwise just install what we know we need
-# We install Django, DRF, Celery, psycopg2, corsheaders
+COPY requirements.txt /tmp/requirements.txt
+
 RUN pip install --upgrade pip
-RUN pip install Django==5.1.7 djangorestframework celery redis psycopg2-binary django-cors-headers requests
+RUN pip install -r /tmp/requirements.txt
 
 COPY . /app/
 

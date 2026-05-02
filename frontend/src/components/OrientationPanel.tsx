@@ -1,11 +1,11 @@
 import { useCallback, useState } from "react";
-import axios from "axios";
 import {
   RotateCcw,
   ChevronDown,
   ChevronRight,
   AlertTriangle,
 } from "lucide-react";
+import apiClient from "../lib/apiClient";
 import { useSimStore } from "../store/useSimStore";
 import { FieldWithHint } from "./FieldWithHint";
 import { SliderWithInput } from "./SliderWithInput";
@@ -40,7 +40,7 @@ export function OrientationPanel() {
     async (p: number, r: number, y: number) => {
       if (!activeSimId) return;
       try {
-        await axios.patch(`http://localhost:8000/api/runs/${activeSimId}/`, {
+        await apiClient.patch(`/api/runs/${activeSimId}/`, {
           pitch: p,
           roll: r,
           yaw: y,

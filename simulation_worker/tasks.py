@@ -21,7 +21,6 @@ import re
 
 from config import (
     app,
-    DJANGO_API_URL,
     DJANGO_MEDIA_ROOT,
     broker_url,
     result_backend,
@@ -34,7 +33,6 @@ from services.postprocess import post_process
 from services.openfoam import compute_first_layer_thickness
 
 import json
-import requests
 import pyvista
 
 logger = logging.getLogger(__name__)
@@ -51,7 +49,7 @@ def run_hydro_simulation(self, sim_id):
     4. simpleFoam solver execution
     5. Post-processing pipeline
     6. Temporal frame extraction
-    7. Results upload to Django API
+    7. Results persisted to the Django ORM
     """
     logger.info(f"Received Simulation request: {sim_id}")
     case_dir = f"/data/simulations/{sim_id}"
@@ -61,26 +59,16 @@ def run_hydro_simulation(self, sim_id):
         patch_django_status(sim_id, "PENDING", error_log="Initializing Job Configuration...")
         os.makedirs(case_dir, exist_ok=True)
 
-        # Pull parameters from the Django ORM (authoritative source — always available
-        # to the worker).  A fallback REST call is made to catch any extra fields that
-        # may only exist in the serialiser response.
+        # Pull parameters from the Django ORM (authoritative source for worker execution).
         from api.models import SimulationRun as _SR
         run_obj_init = _SR.objects.get(id=sim_id)
 
-        run_data = {}
-        try:
-            resp = requests.get(f"{DJANGO_API_URL}/{sim_id}/")
-            if resp.status_code == 200:
-                run_data = resp.json()
-        except Exception as e:
-            logger.warning(f"Could not fetch REST parameter context (will use ORM): {e}")
-
-        def _get(orm_attr, rest_key, default):
-            """Return ORM value if set, else REST value, else default."""
+        def _get(orm_attr, _rest_key, default):
+            """Return ORM value if set, else default."""
             orm_val = getattr(run_obj_init, orm_attr, None)
             if orm_val is not None:
                 return orm_val
-            return run_data.get(rest_key, default)
+            return default
 
         velocity = _get('velocity', 'velocity', 10.0)
         density = _get('water_density', 'water_density', 1025.0)
@@ -310,7 +298,7 @@ def run_hydro_simulation(self, sim_id):
             case_dir, sim_id,
             velocity=velocity,
             rho=density,
-            p_vapour=run_data.get("p_vapour"),
+            p_vapour=None,
         )
         pp_results = pp.get("results", {})
         pp_manifest = pp.get("file_manifest", {})
@@ -399,11 +387,17 @@ def run_hydro_simulation(self, sim_id):
         elif "foil_surface_stl" in pp_manifest:
             completed_payload["result_mesh_path"] = pp_manifest["foil_surface_stl"]
 
-        try:
-            import requests
-            requests.patch(f"{DJANGO_API_URL}/{sim_id}/", json=completed_payload)
-        except Exception as e:
-            logger.error(f"Failed to patch completed status: {e}")
+        if not patch_django_status(
+            sim_id,
+            status="COMPLETED",
+            error_log=completed_payload.get("current_logs"),
+            result_mesh_path=completed_payload.get("result_mesh_path"),
+            result_sequence_path=completed_payload.get("result_sequence_path"),
+            frame_mapping=completed_payload.get("frame_mapping"),
+            metrics_series=completed_payload.get("metrics_series"),
+            convergence_series=completed_payload.get("convergence_series"),
+        ):
+            logger.error(f"Failed to persist completed status for simulation {sim_id}")
 
         return f"Simulation {sim_id} Finished"
 

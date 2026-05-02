@@ -26,6 +26,7 @@ import vtkPolyDataNormals from "@kitware/vtk.js/Filters/Core/PolyDataNormals";
 import vtkWindowedSincPolyDataFilter from "@kitware/vtk.js/Filters/General/WindowedSincPolyDataFilter";
 
 import type { VtkContext } from "./useVtkRenderer";
+import { toApiUrl } from "../lib/apiClient";
 import { useSimStore } from "../store/useSimStore";
 import { createVtkLookupTable } from "../lib/vtkColormaps";
 
@@ -438,8 +439,6 @@ export function useVtkScene(
 
   const setVtkSceneBounds = useSimStore((s) => s.setVtkSceneBounds);
 
-  const baseUrl = "http://localhost:8000";
-
   // ── Render helper ────────────────────────────────────────────────────────
   const render = useCallback(() => {
     contextRef.current?.renderWindow?.render();
@@ -472,11 +471,9 @@ export function useVtkScene(
   // ────────────────────────────────────────────────────────────────────────
   const activeFramePath =
     totalFrames > 0 ? (frameMapping[currentFrame]?.mesh_path ?? null) : null;
-  const activeFrameUrl = activeFramePath
-    ? `${baseUrl}${activeFramePath}`
-    : null;
-  const fallbackUrl = resultMeshPath ? `${baseUrl}${resultMeshPath}` : null;
-  const assetPreviewUrl = selectedAssetFileUrl || null;
+  const activeFrameUrl = toApiUrl(activeFramePath);
+  const fallbackUrl = toApiUrl(resultMeshPath);
+  const assetPreviewUrl = toApiUrl(selectedAssetFileUrl);
   const foilUrl = activeFrameUrl ?? fallbackUrl ?? assetPreviewUrl;
 
   // Pressure iso-surface lines (large STL from OpenFOAM sampling)
@@ -485,9 +482,7 @@ export function useVtkScene(
       ? (frameMapping[currentFrame]?.pressure_lines_path ?? null)
       : null;
   const pressureLinesUrl =
-    showPressureMap && pressureLinesPath
-      ? `${baseUrl}${pressureLinesPath}`
-      : null;
+    showPressureMap ? toApiUrl(pressureLinesPath) : null;
 
   // Flow lines
   const flowLinesPath =
@@ -495,7 +490,7 @@ export function useVtkScene(
       ? (frameMapping[currentFrame]?.flow_lines_path ?? null)
       : null;
   const flowLinesUrl =
-    showFlowLines && flowLinesPath ? `${baseUrl}${flowLinesPath}` : null;
+    showFlowLines ? toApiUrl(flowLinesPath) : null;
 
   // ────────────────────────────────────────────────────────────────────────
   //  EFFECT 1: Load foil surface geometry (ONLY when URL changes)
@@ -932,7 +927,8 @@ mapper.setInterpolateScalarsBeforeMapping(true);
       return;
     }
 
-    const vtpUrl = `${baseUrl}${qPath}`;
+    const vtpUrl = toApiUrl(qPath);
+    if (!vtpUrl) return;
 
     (async () => {
       try {
@@ -1034,7 +1030,8 @@ mapper.setInterpolateScalarsBeforeMapping(true);
     const simId = useSimStore.getState().activeSimId;
     if (!simId) return;
 
-    const vtpUrl = `${baseUrl}/media/simulations/${simId}/skin_friction_lines.vtp`;
+    const vtpUrl = toApiUrl(`/media/simulations/${simId}/skin_friction_lines.vtp`);
+    if (!vtpUrl) return;
 
     (async () => {
       try {

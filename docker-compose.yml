@@ -6,25 +6,33 @@ services:
       POSTGRES_DB: nereus
       POSTGRES_USER: nereus_admin
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - nereus_internal
   redis:
     image: redis:6-alpine
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 20
+    networks:
+      - nereus_internal
   api:
     build: ./backend
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - ./backend:/app
-      - ./data:/data # Bind mount for sharing CAD files with worker (persists on host)
+      - ./data:/data
+    env_file:
+      - ./backend/.env
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       DJANGO_MEDIA_ROOT: /data/media
+      DATABASE_URL: postgres://nereus_admin:${DB_PASSWORD:-postgres}@db:5432/nereus
+      ALLOWED_HOSTS: localhost,127.0.0.1,api,host.docker.internal
     ports:
       - "8000:8000"
     depends_on:
@@ -32,6 +40,9 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+    networks:
+      - nereus_internal
+      - default
   worker:
     platform: linux/amd64
     build: ./simulation_worker
@@ -44,14 +55,25 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./simulation_worker:/app
-      - ./backend:/backend # Django project for ORM access
-      - ./data:/data # Worker reads files here, runs OpenFOAM, writes results
+      - ./backend:/backend
+      - ./data:/data
+    env_file:
+      - ./backend/.env
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       DJANGO_MEDIA_ROOT: /data/media
       DJANGO_SETTINGS_MODULE: nereus_core.settings
-      DJANGO_API_URL: http://host.docker.internal:8000/api/runs
+      DATABASE_URL: postgres://nereus_admin:${DB_PASSWORD:-postgres}@db:5432/nereus
     depends_on:
       redis:
         condition: service_healthy
+    networks:
+      - nereus_internal
+
+volumes:
+  postgres_data:
+
+networks:
+  nereus_internal:
+    internal: true
