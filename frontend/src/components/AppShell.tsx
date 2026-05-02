@@ -5,13 +5,30 @@ import { Waves } from "lucide-react";
 import { ToolbarContext } from "../hooks/useToolbar";
 import type { ReactNode } from "react";
 import apiClient from "../lib/apiClient";
-import { useAuth } from "../lib/auth";
+import { useAuth, type TeamRole } from "../lib/auth";
 import { useSimStore } from "../store/useSimStore";
 
 type ProjectSummary = {
   id: number;
   name: string;
+  team: number;
 };
+
+function formatRoleLabel(role: TeamRole | null | undefined, isSuperuser = false) {
+  if (isSuperuser) {
+    return "Superuser";
+  }
+
+  if (role === "team_admin") {
+    return "Team Admin";
+  }
+
+  if (role === "engineer") {
+    return "Engineer";
+  }
+
+  return "Viewer";
+}
 
 // ── AppShell ─────────────────────────────────────────────────────────────────
 
@@ -19,8 +36,8 @@ export default function AppShell() {
   const [toolbarContent, setToolbarContentRaw] = useState<ReactNode>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isProjectLoading, setIsProjectLoading] = useState(true);
-  const [currentProjectName, setCurrentProjectName] = useState<string | null>(null);
-  const { user, logout } = useAuth();
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const { user, logout, activeTeam, activeTeamId, setActiveTeamId } = useAuth();
   const projectId = useSimStore((state) => state.projectId);
   const setProjectId = useSimStore((state) => state.setProjectId);
 
@@ -28,10 +45,15 @@ export default function AppShell() {
     setToolbarContentRaw(content);
   }, []);
 
-  const teamSummary = useMemo(() => {
-    if (!user?.teams?.length) return "No team assigned";
-    return user.teams.map((team) => team.name).join(", ");
-  }, [user]);
+  const currentProjectName = useMemo(
+    () => projects.find((project) => project.id === projectId)?.name ?? null,
+    [projects, projectId],
+  );
+
+  const activeRoleLabel = useMemo(
+    () => formatRoleLabel(activeTeam?.role, user?.is_superuser),
+    [activeTeam?.role, user?.is_superuser],
+  );
 
   const handleLogout = useCallback(async () => {
     setIsLoggingOut(true);
@@ -48,9 +70,9 @@ export default function AppShell() {
     let active = true;
 
     async function bootstrapProject() {
-      if (!user) {
+      if (!user || !activeTeamId) {
         if (active) {
-          setCurrentProjectName(null);
+          setProjects([]);
           setIsProjectLoading(false);
         }
         return;
@@ -58,22 +80,25 @@ export default function AppShell() {
 
       setIsProjectLoading(true);
       try {
-        const { data } = await apiClient.get<ProjectSummary[]>('/api/projects/');
+        const { data } = await apiClient.get<ProjectSummary[]>('/api/projects/', {
+          params: { team: activeTeamId },
+        });
         if (!active) return;
 
-        const projects = Array.isArray(data) ? data : [];
-        if (projects.length === 0) {
-          setCurrentProjectName(null);
+        const nextProjects = Array.isArray(data) ? data : [];
+        setProjects(nextProjects);
+        if (nextProjects.length === 0) {
           return;
         }
 
-        const selectedProject = projects.find((project) => project.id === projectId) ?? projects[0];
-        setProjectId(selectedProject.id);
-        setCurrentProjectName(selectedProject.name);
+        const selectedProject = nextProjects.find((project) => project.id === projectId) ?? nextProjects[0];
+        if (selectedProject.id !== projectId) {
+          setProjectId(selectedProject.id);
+        }
       } catch (error) {
         console.error('Failed to bootstrap project context', error);
         if (active) {
-          setCurrentProjectName(null);
+          setProjects([]);
         }
       } finally {
         if (active) {
@@ -86,7 +111,7 @@ export default function AppShell() {
     return () => {
       active = false;
     };
-  }, [user, projectId, setProjectId]);
+  }, [user, activeTeamId, projectId, setProjectId]);
 
   return (
     <ToolbarContext.Provider value={{ setToolbarContent }}>
@@ -124,9 +149,61 @@ export default function AppShell() {
               {user && (
                 <>
                   <div className="h-4 w-px bg-[rgba(255,255,255,0.08)]" />
+                  <div className="hidden items-center gap-2 lg:flex">
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-[rgba(255,255,255,0.35)]">Team</span>
+                    {user.teams.length > 1 ? (
+                      <select
+                        value={activeTeamId ?? ""}
+                        onChange={(event) => setActiveTeamId(Number(event.target.value))}
+                        className="h-7 border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2 text-[11px] text-white outline-none"
+                        style={{ borderRadius: "2px" }}
+                      >
+                        {user.teams.map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div
+                        className="inline-flex h-7 items-center border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 text-[11px] text-white"
+                        style={{ borderRadius: "2px" }}
+                      >
+                        {activeTeam?.name ?? "No team"}
+                      </div>
+                    )}
+                  </div>
+                  {projects.length > 0 && (
+                    <div className="hidden items-center gap-2 lg:flex">
+                      <span className="text-[10px] uppercase tracking-[0.12em] text-[rgba(255,255,255,0.35)]">Project</span>
+                      {projects.length > 1 ? (
+                        <select
+                          value={projectId}
+                          onChange={(event) => setProjectId(Number(event.target.value))}
+                          className="h-7 border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2 text-[11px] text-white outline-none"
+                          style={{ borderRadius: "2px" }}
+                        >
+                          {projects.map((project) => (
+                            <option key={project.id} value={project.id}>
+                              {project.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div
+                          className="inline-flex h-7 items-center border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 text-[11px] text-white"
+                          style={{ borderRadius: "2px" }}
+                        >
+                          {currentProjectName}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="hidden text-right sm:block">
                     <div className="text-[11px] font-medium text-white">{user.first_name || user.username}</div>
-                    <div className="text-[10px] text-[rgba(255,255,255,0.35)]">{teamSummary}</div>
+                    <div className="text-[10px] text-[rgba(255,255,255,0.35)]">
+                      {activeTeam?.name ?? "No team assigned"} · {activeRoleLabel}
+                    </div>
                   </div>
                   <button
                     type="button"

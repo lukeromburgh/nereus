@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Activity,
+  Building2,
   FolderOpen,
   TrendingUp,
   LifeBuoy,
@@ -12,6 +13,7 @@ const navItems = [
   { key: "simulation", label: "Simulation", to: "/", icon: Activity },
   { key: "assets", label: "Assets", to: "/assets", icon: FolderOpen },
   { key: "telemetry", label: "Telemetry", to: "/comparison", icon: TrendingUp },
+  { key: "team", label: "Team", to: "/team", icon: Building2 },
 ];
 
 import pkg from "../../package.json";

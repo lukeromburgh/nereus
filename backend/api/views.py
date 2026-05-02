@@ -7,11 +7,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth import authenticate, login, logout
 from django.conf import settings
+from django.shortcuts import get_object_or_404
 from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
-from .access import ensure_user_workspace, get_accessible_projects
-from .models import Folder, HydrofoilAsset, Project, SimulationRun
+from .access import ensure_user_workspace, get_accessible_projects, get_user_teams, user_can_manage_team
+from .models import Folder, HydrofoilAsset, Project, SimulationRun, Team, TeamInvite, TeamMembership
 from .permissions import IsOwnerOrTeamMember
 from .serializers import (
     CurrentUserSerializer,
@@ -20,6 +21,13 @@ from .serializers import (
     LoginSerializer,
     ProjectSerializer,
     SimulationRunSerializer,
+    TeamDetailSerializer,
+    TeamInviteCreateSerializer,
+    TeamInvitePreviewSerializer,
+    TeamInviteSerializer,
+    TeamMembershipUpdateSerializer,
+    TeamSerializer,
+    TeamUpdateSerializer,
 )
 from django.db import transaction
 
@@ -57,7 +65,7 @@ class SessionLoginView(APIView):
 
         login(request, user)
         ensure_user_workspace(user)
-        return Response(CurrentUserSerializer(user).data)
+        return Response(CurrentUserSerializer(user, context={'request': request}).data)
 
 
 class SessionLogoutView(APIView):
@@ -73,7 +81,161 @@ class CurrentUserView(APIView):
 
     def get(self, request):
         ensure_user_workspace(request.user)
-        return Response(CurrentUserSerializer(request.user).data)
+        return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
+
+
+class TeamViewSet(viewsets.ModelViewSet):
+    queryset = Team.objects.all()
+    permission_classes = [IsAuthenticated]
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        return get_user_teams(self.request.user).prefetch_related('memberships__user', 'projects', 'invites__invited_by')
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return TeamDetailSerializer
+        if self.action == 'partial_update':
+            return TeamUpdateSerializer
+        return TeamSerializer
+
+    def partial_update(self, request, *args, **kwargs):
+        team = self.get_object()
+        if not user_can_manage_team(request.user, team):
+            return Response({'detail': 'You do not have permission to manage this team.'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = self.get_serializer(team, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(TeamDetailSerializer(team, context={'request': request}).data)
+
+
+class TeamInviteCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, team_pk):
+        team = get_object_or_404(get_user_teams(request.user), pk=team_pk)
+        if not user_can_manage_team(request.user, team):
+            return Response({'detail': 'You do not have permission to invite members to this team.'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = TeamInviteCreateSerializer(data=request.data, context={'request': request, 'team': team})
+        serializer.is_valid(raise_exception=True)
+        invite = serializer.save()
+        return Response(TeamInviteSerializer(invite, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
+class TeamInviteRevokeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, team_pk, invite_pk):
+        team = get_object_or_404(get_user_teams(request.user), pk=team_pk)
+        if not user_can_manage_team(request.user, team):
+            return Response({'detail': 'You do not have permission to revoke invites for this team.'}, status=status.HTTP_403_FORBIDDEN)
+
+        invite = get_object_or_404(TeamInvite.objects.filter(team=team).select_related('team', 'invited_by'), pk=invite_pk)
+        invite.refresh_status(save=True)
+
+        if invite.status != TeamInvite.StatusChoices.PENDING:
+            return Response({'detail': 'Only active invites can be revoked.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        invite.revoke()
+        return Response(TeamInviteSerializer(invite, context={'request': request}).data)
+
+
+class TeamInvitePreviewView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        invite = get_object_or_404(TeamInvite.objects.select_related('team'), token=token)
+        invite.refresh_status(save=True)
+        return Response(TeamInvitePreviewSerializer(invite, context={'request': request}).data)
+
+
+class TeamInviteAcceptView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, token):
+        invite = get_object_or_404(TeamInvite.objects.select_related('team'), token=token)
+        invite.refresh_status(save=True)
+
+        if invite.status != TeamInvite.StatusChoices.PENDING:
+            return Response(
+                {
+                    'detail': 'This invite is no longer active.',
+                    'status': invite.status,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not request.user.is_superuser:
+            invite_email = invite.email.strip().lower()
+            user_email = (request.user.email or '').strip().lower()
+            if not user_email:
+                return Response(
+                    {'detail': 'Your account needs an email address before accepting this invite.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if user_email != invite_email:
+                return Response(
+                    {'detail': 'This invite was issued for a different email address.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        TeamMembership.objects.get_or_create(
+            team=invite.team,
+            user=request.user,
+            defaults={'role': invite.role},
+        )
+        invite.accept(request.user)
+        ensure_user_workspace(request.user)
+
+        return Response(
+            {
+                'detail': 'Invite accepted.',
+                'team': TeamSerializer(invite.team, context={'request': request}).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class TeamMemberUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, team_pk, user_pk):
+        team = get_object_or_404(get_user_teams(request.user), pk=team_pk)
+        if not user_can_manage_team(request.user, team):
+            return Response({'detail': 'You do not have permission to manage members for this team.'}, status=status.HTTP_403_FORBIDDEN)
+
+        membership = get_object_or_404(TeamMembership.objects.select_related('user', 'team'), team=team, user_id=user_pk)
+        serializer = TeamMembershipUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        next_role = serializer.validated_data['role']
+
+        if membership.role == TeamMembership.RoleChoices.TEAM_ADMIN and next_role != TeamMembership.RoleChoices.TEAM_ADMIN:
+            admin_count = TeamMembership.objects.filter(team=team, role=TeamMembership.RoleChoices.TEAM_ADMIN).count()
+            if admin_count <= 1:
+                return Response({'detail': 'This team must keep at least one team admin.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        membership.role = next_role
+        membership.save(update_fields=['role', 'updated_at'])
+        return Response({'detail': 'Member role updated.', 'member': TeamMemberSerializer(membership).data}, status=status.HTTP_200_OK)
+
+
+class TeamMemberRemoveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, team_pk, user_pk):
+        team = get_object_or_404(get_user_teams(request.user), pk=team_pk)
+        if not user_can_manage_team(request.user, team):
+            return Response({'detail': 'You do not have permission to manage members for this team.'}, status=status.HTTP_403_FORBIDDEN)
+
+        membership = get_object_or_404(TeamMembership.objects.select_related('user', 'team'), team=team, user_id=user_pk)
+        if membership.role == TeamMembership.RoleChoices.TEAM_ADMIN:
+            admin_count = TeamMembership.objects.filter(team=team, role=TeamMembership.RoleChoices.TEAM_ADMIN).count()
+            if admin_count <= 1:
+                return Response({'detail': 'This team must keep at least one team admin.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        membership.delete()
+        return Response({'detail': 'Member removed.'}, status=status.HTTP_200_OK)
 
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
@@ -81,7 +243,11 @@ class ProjectViewSet(viewsets.ModelViewSet):
     permission_classes = [IsOwnerOrTeamMember]
 
     def get_queryset(self):
-        return get_accessible_projects(self.request.user).order_by('name')
+        qs = get_accessible_projects(self.request.user).order_by('name')
+        team_id = self.request.query_params.get('team')
+        if team_id:
+            qs = qs.filter(team_id=team_id)
+        return qs
 
 class HydrofoilAssetViewSet(viewsets.ModelViewSet):
     queryset = HydrofoilAsset.objects.all()

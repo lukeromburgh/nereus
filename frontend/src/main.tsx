@@ -13,6 +13,8 @@ import { AuthProvider, RequireAuth } from "./lib/auth";
 const SimulationPage = React.lazy(() => import("./App"));
 const AssetManagerPage = React.lazy(() => import("./pages/AssetManagerPage"));
 const RunComparisonPage = React.lazy(() => import("./pages/RunComparisonPage"));
+const TeamPage = React.lazy(() => import("./pages/TeamPage"));
+const JoinTeamPage = React.lazy(() => import("./pages/JoinTeamPage"));
 
 // Minimal fallback — avoids layout shift while the async chunk loads.
 // AppShell itself is kept synchronously because the shell layout (navbar,
@@ -29,6 +31,14 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/join/:token"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <JoinTeamPage />
+              </Suspense>
+            }
+          />
           <Route
             element={
               <RequireAuth>
@@ -57,6 +67,14 @@ createRoot(document.getElementById("root")!).render(
               element={
                 <Suspense fallback={<PageFallback />}>
                   <RunComparisonPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/team"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <TeamPage />
                 </Suspense>
               }
             />

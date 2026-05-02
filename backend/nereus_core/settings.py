@@ -55,6 +55,10 @@ CSRF_TRUSTED_ORIGINS = config(
     cast=Csv(),
     default='http://localhost:5173',
 )
+FRONTEND_APP_URL = config(
+    'FRONTEND_APP_URL',
+    default=(CORS_ALLOWED_ORIGINS[0] if CORS_ALLOWED_ORIGINS else 'http://localhost:5173'),
+)
 
 ROOT_URLCONF = 'nereus_core.urls'
 

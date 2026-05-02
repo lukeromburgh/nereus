@@ -1,25 +1,212 @@
 from rest_framework import serializers
+from rest_framework.permissions import SAFE_METHODS
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from .models import Folder, HydrofoilAsset, Project, SimulationRun, Team
-from .access import get_user_teams, user_can_access_project
+from django.utils import timezone
+from .models import Folder, HydrofoilAsset, Project, SimulationRun, Team, TeamInvite, TeamMembership
+from .access import (
+    get_team_membership,
+    get_user_teams,
+    user_can_access_project,
+    user_can_edit_team_resources,
+    user_can_manage_team,
+)
 
 
 User = get_user_model()
 
 
 class TeamSerializer(serializers.ModelSerializer):
+    role = serializers.SerializerMethodField()
+    member_count = serializers.SerializerMethodField()
+    project_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Team
-        fields = ['id', 'name']
+        fields = ['id', 'name', 'role', 'member_count', 'project_count']
+
+    def get_role(self, obj):
+        request = self.context.get('request')
+        if request is None:
+            return None
+        if request.user.is_superuser:
+            return TeamMembership.RoleChoices.TEAM_ADMIN
+
+        membership = get_team_membership(request.user, obj)
+        return membership.role if membership is not None else None
+
+    def get_member_count(self, obj):
+        return obj.memberships.count()
+
+    def get_project_count(self, obj):
+        return obj.projects.count()
+
+
+class TeamProjectSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = ['id', 'name', 'description', 'created_at', 'updated_at']
+
+
+class TeamInviteSerializer(serializers.ModelSerializer):
+    invite_url = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    invited_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TeamInvite
+        fields = [
+            'id',
+            'email',
+            'role',
+            'status',
+            'invite_url',
+            'expires_at',
+            'created_at',
+            'updated_at',
+            'invited_by_name',
+        ]
+
+    def get_invite_url(self, obj):
+        base = getattr(settings, 'FRONTEND_APP_URL', '').rstrip('/')
+        if not base:
+            return f"/join/{obj.token}"
+        return f"{base}/join/{obj.token}"
+
+    def get_status(self, obj):
+        if obj.has_expired():
+            return TeamInvite.StatusChoices.EXPIRED
+        return obj.status
+
+    def get_invited_by_name(self, obj):
+        if obj.invited_by is None:
+            return None
+        full_name = f"{obj.invited_by.first_name} {obj.invited_by.last_name}".strip()
+        return full_name or obj.invited_by.username
+
+
+class TeamInviteCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TeamInvite
+        fields = ['email', 'role']
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+    def validate(self, data):
+        request = self.context.get('request')
+        team = self.context.get('team')
+        email = data.get('email', '').strip().lower()
+
+        if request is None or team is None:
+            raise serializers.ValidationError('Invite context is incomplete.')
+
+        if not user_can_manage_team(request.user, team):
+            raise serializers.ValidationError('You do not have permission to invite members to this team.')
+
+        if TeamMembership.objects.filter(team=team, user__email__iexact=email).exists():
+            raise serializers.ValidationError({'email': 'A member with this email already belongs to the team.'})
+
+        has_pending_invite = TeamInvite.objects.filter(
+            team=team,
+            email__iexact=email,
+            status=TeamInvite.StatusChoices.PENDING,
+            expires_at__gt=timezone.now(),
+        ).exists()
+        if has_pending_invite:
+            raise serializers.ValidationError({'email': 'A pending invite already exists for this email.'})
+
+        return data
+
+    def create(self, validated_data):
+        request = self.context['request']
+        team = self.context['team']
+        return TeamInvite.objects.create(
+            team=team,
+            invited_by=request.user,
+            **validated_data,
+        )
+
+
+class TeamInvitePreviewSerializer(serializers.ModelSerializer):
+    team = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TeamInvite
+        fields = ['id', 'email', 'role', 'status', 'expires_at', 'team']
+
+    def get_team(self, obj):
+        return {
+            'id': obj.team_id,
+            'name': obj.team.name,
+        }
+
+    def get_status(self, obj):
+        if obj.has_expired():
+            return TeamInvite.StatusChoices.EXPIRED
+        return obj.status
+
+
+class TeamMemberSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source='user.id', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
+    email = serializers.EmailField(source='user.email', read_only=True)
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    last_name = serializers.CharField(source='user.last_name', read_only=True)
+
+    class Meta:
+        model = TeamMembership
+        fields = [
+            'id',
+            'username',
+            'email',
+            'first_name',
+            'last_name',
+            'role',
+            'created_at',
+            'updated_at',
+        ]
+
+
+class TeamMembershipUpdateSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=TeamMembership.RoleChoices.choices)
+
+
+class TeamDetailSerializer(TeamSerializer):
+    members = TeamMemberSerializer(source='memberships', many=True, read_only=True)
+    projects = TeamProjectSummarySerializer(many=True, read_only=True)
+    invites = serializers.SerializerMethodField()
+
+    class Meta(TeamSerializer.Meta):
+        fields = TeamSerializer.Meta.fields + ['members', 'projects', 'invites']
+
+    def get_invites(self, obj):
+        request = self.context.get('request')
+        if request is None or not user_can_manage_team(request.user, obj):
+            return []
+
+        invites = obj.invites.select_related('invited_by').all()
+        return TeamInviteSerializer(invites, many=True, context=self.context).data
+
+
+class TeamUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Team
+        fields = ['id', 'name', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class CurrentUserSerializer(serializers.ModelSerializer):
-    teams = TeamSerializer(many=True, read_only=True)
+    teams = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'teams']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_superuser', 'teams']
+
+    def get_teams(self, obj):
+        teams = get_user_teams(obj).order_by('name')
+        return TeamSerializer(teams, many=True, context=self.context).data
 
 
 class LoginSerializer(serializers.Serializer):
@@ -48,6 +235,9 @@ class ProjectSerializer(serializers.ModelSerializer):
         elif not user_teams.filter(id=team.id).exists():
             raise serializers.ValidationError({'team': 'Project team must be one of your teams.'})
 
+        if request.method not in SAFE_METHODS and not user_can_edit_team_resources(request.user, team):
+            raise serializers.ValidationError({'team': 'You do not have permission to create or modify projects for this team.'})
+
         return data
 
 class HydrofoilAssetSerializer(serializers.ModelSerializer):
@@ -74,6 +264,8 @@ class HydrofoilAssetSerializer(serializers.ModelSerializer):
         if request is not None and not request.user.is_superuser and project is not None:
             if not user_can_access_project(request.user, project):
                 raise serializers.ValidationError({'project': 'You do not have access to this project.'})
+            if request.method not in SAFE_METHODS and not user_can_edit_team_resources(request.user, project.team):
+                raise serializers.ValidationError({'project': 'You do not have permission to modify assets for this project.'})
 
         if folder and project and folder.project_id != project.id:
             raise serializers.ValidationError(
@@ -118,6 +310,8 @@ class FolderSerializer(serializers.ModelSerializer):
         if request is not None and not request.user.is_superuser and project is not None:
             if not user_can_access_project(request.user, project):
                 raise serializers.ValidationError({'project': 'You do not have access to this project.'})
+            if request.method not in SAFE_METHODS and not user_can_edit_team_resources(request.user, project.team):
+                raise serializers.ValidationError({'project': 'You do not have permission to modify folders for this project.'})
 
         if project and name:
             qs = Folder.objects.filter(project=project, parent=parent, name=name)
@@ -174,6 +368,8 @@ class SimulationRunSerializer(serializers.ModelSerializer):
         if request is not None and not request.user.is_superuser and project is not None:
             if not user_can_access_project(request.user, project):
                 raise serializers.ValidationError({'project': 'You do not have access to this project.'})
+            if request.method not in SAFE_METHODS and not user_can_edit_team_resources(request.user, project.team):
+                raise serializers.ValidationError({'project': 'You do not have permission to create or modify runs for this project.'})
 
         if asset is not None and project is not None and asset.project_id != project.id:
             raise serializers.ValidationError({'asset': 'Asset must belong to the selected project.'})
@@ -203,6 +399,10 @@ class SimulationRunSerializer(serializers.ModelSerializer):
 
     # For internal service/worker patching, allow status and logs
     def update(self, instance, validated_data):
+        request = self.context.get('request')
+        if request is not None and not request.user.is_superuser and not user_can_edit_team_resources(request.user, instance.project.team):
+            raise serializers.ValidationError({'project': 'You do not have permission to update this run.'})
+
         if 'status' in self.initial_data:
             instance.status = self.initial_data['status']
         if 'current_logs' in self.initial_data:

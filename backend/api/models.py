@@ -1,11 +1,27 @@
 from django.db import models
 from django.conf import settings
 from django.core.validators import FileExtensionValidator
+from django.utils import timezone
+import secrets
+from datetime import timedelta
+
+
+def generate_invite_token():
+    return secrets.token_urlsafe(24)
+
+
+def default_invite_expiry():
+    return timezone.now() + timedelta(days=14)
 
 
 class Team(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    members = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='teams', blank=True)
+    members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        through='TeamMembership',
+        related_name='teams',
+        blank=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -14,6 +30,115 @@ class Team(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class TeamMembership(models.Model):
+    class RoleChoices(models.TextChoices):
+        VIEWER = 'viewer', 'Viewer'
+        ENGINEER = 'engineer', 'Engineer'
+        TEAM_ADMIN = 'team_admin', 'Team Admin'
+
+    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='memberships')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='team_memberships',
+    )
+    role = models.CharField(
+        max_length=24,
+        choices=RoleChoices.choices,
+        default=RoleChoices.TEAM_ADMIN,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'api_team_members'
+        ordering = ['team_id', 'user_id']
+        unique_together = ('team', 'user')
+
+    def __str__(self):
+        return f"{self.user} in {self.team} ({self.role})"
+
+
+class TeamInvite(models.Model):
+    class StatusChoices(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        ACCEPTED = 'accepted', 'Accepted'
+        REVOKED = 'revoked', 'Revoked'
+        EXPIRED = 'expired', 'Expired'
+
+    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='invites')
+    email = models.EmailField()
+    role = models.CharField(
+        max_length=24,
+        choices=TeamMembership.RoleChoices.choices,
+        default=TeamMembership.RoleChoices.VIEWER,
+    )
+    token = models.CharField(max_length=64, unique=True, default=generate_invite_token, editable=False)
+    status = models.CharField(
+        max_length=24,
+        choices=StatusChoices.choices,
+        default=StatusChoices.PENDING,
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sent_team_invites',
+    )
+    accepted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='accepted_team_invites',
+    )
+    expires_at = models.DateTimeField(default=default_invite_expiry)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Invite {self.email} to {self.team}"
+
+    def save(self, *args, **kwargs):
+        self.email = self.email.strip().lower()
+        super().save(*args, **kwargs)
+
+    def has_expired(self):
+        return self.status == self.StatusChoices.PENDING and timezone.now() >= self.expires_at
+
+    def refresh_status(self, save=True):
+        if self.has_expired():
+            self.status = self.StatusChoices.EXPIRED
+            if save:
+                self.save(update_fields=['status', 'updated_at'])
+        return self.status
+
+    def accept(self, user):
+        self.refresh_status(save=True)
+        if self.status != self.StatusChoices.PENDING:
+            raise ValueError('Invite is not active.')
+
+        self.status = self.StatusChoices.ACCEPTED
+        self.accepted_by = user
+        self.accepted_at = timezone.now()
+        self.save(update_fields=['status', 'accepted_by', 'accepted_at', 'updated_at'])
+
+    def revoke(self):
+        self.refresh_status(save=True)
+        if self.status != self.StatusChoices.PENDING:
+            raise ValueError('Invite is not active.')
+
+        self.status = self.StatusChoices.REVOKED
+        self.revoked_at = timezone.now()
+        self.save(update_fields=['status', 'revoked_at', 'updated_at'])
 
 class Project(models.Model):
     team = models.ForeignKey(
