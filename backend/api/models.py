@@ -96,6 +96,9 @@ class TeamInvite(models.Model):
         related_name='accepted_team_invites',
     )
     expires_at = models.DateTimeField(default=default_invite_expiry)
+    last_sent_at = models.DateTimeField(null=True, blank=True)
+    send_count = models.PositiveIntegerField(default=0)
+    delivery_error = models.CharField(max_length=500, blank=True)
     accepted_at = models.DateTimeField(null=True, blank=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -139,6 +142,27 @@ class TeamInvite(models.Model):
         self.status = self.StatusChoices.REVOKED
         self.revoked_at = timezone.now()
         self.save(update_fields=['status', 'revoked_at', 'updated_at'])
+
+    def reactivate(self):
+        self.token = generate_invite_token()
+        self.status = self.StatusChoices.PENDING
+        self.expires_at = default_invite_expiry()
+        self.accepted_at = None
+        self.accepted_by = None
+        self.revoked_at = None
+        self.delivery_error = ''
+        self.save(
+            update_fields=[
+                'token',
+                'status',
+                'expires_at',
+                'accepted_at',
+                'accepted_by',
+                'revoked_at',
+                'delivery_error',
+                'updated_at',
+            ]
+        )
 
 class Project(models.Model):
     team = models.ForeignKey(

@@ -1,12 +1,15 @@
 from rest_framework import serializers
 from rest_framework.permissions import SAFE_METHODS
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.utils import timezone
 from .models import Folder, HydrofoilAsset, Project, SimulationRun, Team, TeamInvite, TeamMembership
 from .access import (
+    build_username_from_email,
     get_team_membership,
     get_user_teams,
+    get_user_by_email,
     user_can_access_project,
     user_can_edit_team_resources,
     user_can_manage_team,
@@ -62,6 +65,9 @@ class TeamInviteSerializer(serializers.ModelSerializer):
             'status',
             'invite_url',
             'expires_at',
+            'last_sent_at',
+            'send_count',
+            'delivery_error',
             'created_at',
             'updated_at',
             'invited_by_name',
@@ -131,10 +137,11 @@ class TeamInviteCreateSerializer(serializers.ModelSerializer):
 class TeamInvitePreviewSerializer(serializers.ModelSerializer):
     team = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
+    existing_account = serializers.SerializerMethodField()
 
     class Meta:
         model = TeamInvite
-        fields = ['id', 'email', 'role', 'status', 'expires_at', 'team']
+        fields = ['id', 'email', 'role', 'status', 'expires_at', 'team', 'existing_account']
 
     def get_team(self, obj):
         return {
@@ -146,6 +153,36 @@ class TeamInvitePreviewSerializer(serializers.ModelSerializer):
         if obj.has_expired():
             return TeamInvite.StatusChoices.EXPIRED
         return obj.status
+
+    def get_existing_account(self, obj):
+        return get_user_by_email(obj.email) is not None
+
+
+class TeamInviteSignupSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    password = serializers.CharField(trim_whitespace=False, write_only=True)
+    password_confirm = serializers.CharField(trim_whitespace=False, write_only=True)
+
+    def validate(self, data):
+        invite = self.context.get('invite')
+        if invite is None:
+            raise serializers.ValidationError('Invite context is incomplete.')
+
+        if data['password'] != data['password_confirm']:
+            raise serializers.ValidationError({'password_confirm': 'Passwords do not match.'})
+
+        if get_user_by_email(invite.email) is not None:
+            raise serializers.ValidationError({'email': 'An account already exists for this email. Sign in to accept the invite.'})
+
+        prototype = User(
+            username=build_username_from_email(invite.email),
+            email=invite.email,
+            first_name=data.get('first_name', '').strip(),
+            last_name=data.get('last_name', '').strip(),
+        )
+        validate_password(data['password'], user=prototype)
+        return data
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):

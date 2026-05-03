@@ -5,13 +5,21 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
-from .access import ensure_user_workspace, get_accessible_projects, get_user_teams, user_can_manage_team
+from .access import (
+    build_username_from_email,
+    ensure_user_workspace,
+    get_accessible_projects,
+    get_user_by_email,
+    get_user_teams,
+    send_team_invite_email,
+    user_can_manage_team,
+)
 from .models import Folder, HydrofoilAsset, Project, SimulationRun, Team, TeamInvite, TeamMembership
 from .permissions import IsOwnerOrTeamMember
 from .serializers import (
@@ -24,6 +32,7 @@ from .serializers import (
     TeamDetailSerializer,
     TeamInviteCreateSerializer,
     TeamInvitePreviewSerializer,
+    TeamInviteSignupSerializer,
     TeamInviteSerializer,
     TeamMembershipUpdateSerializer,
     TeamSerializer,
@@ -120,7 +129,27 @@ class TeamInviteCreateView(APIView):
         serializer = TeamInviteCreateSerializer(data=request.data, context={'request': request, 'team': team})
         serializer.is_valid(raise_exception=True)
         invite = serializer.save()
+        send_team_invite_email(invite)
         return Response(TeamInviteSerializer(invite, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
+class TeamInviteResendView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, team_pk, invite_pk):
+        team = get_object_or_404(get_user_teams(request.user), pk=team_pk)
+        if not user_can_manage_team(request.user, team):
+            return Response({'detail': 'You do not have permission to resend invites for this team.'}, status=status.HTTP_403_FORBIDDEN)
+
+        invite = get_object_or_404(TeamInvite.objects.filter(team=team).select_related('team', 'invited_by'), pk=invite_pk)
+        invite.refresh_status(save=True)
+
+        if invite.status in {TeamInvite.StatusChoices.ACCEPTED, TeamInvite.StatusChoices.REVOKED}:
+            return Response({'detail': 'Only pending or expired invites can be resent.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        invite.reactivate()
+        send_team_invite_email(invite)
+        return Response(TeamInviteSerializer(invite, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
 class TeamInviteRevokeView(APIView):
@@ -194,6 +223,59 @@ class TeamInviteAcceptView(APIView):
                 'team': TeamSerializer(invite.team, context={'request': request}).data,
             },
             status=status.HTTP_200_OK,
+        )
+
+
+class TeamInviteSignupView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token):
+        invite = get_object_or_404(TeamInvite.objects.select_related('team'), token=token)
+        invite.refresh_status(save=True)
+
+        if invite.status != TeamInvite.StatusChoices.PENDING:
+            return Response(
+                {
+                    'detail': 'This invite is no longer active.',
+                    'status': invite.status,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if get_user_by_email(invite.email) is not None:
+            return Response(
+                {'detail': 'An account already exists for this email. Sign in to accept the invite.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = TeamInviteSignupSerializer(data=request.data, context={'invite': invite})
+        serializer.is_valid(raise_exception=True)
+
+        user_model = get_user_model()
+        user = user_model.objects.create_user(
+            username=build_username_from_email(invite.email),
+            email=invite.email,
+            password=serializer.validated_data['password'],
+            first_name=serializer.validated_data.get('first_name', '').strip(),
+            last_name=serializer.validated_data.get('last_name', '').strip(),
+        )
+
+        TeamMembership.objects.get_or_create(
+            team=invite.team,
+            user=user,
+            defaults={'role': invite.role},
+        )
+        invite.accept(user)
+        login(request, user)
+        ensure_user_workspace(user)
+
+        return Response(
+            {
+                'detail': 'Account created and invite accepted.',
+                'team': TeamSerializer(invite.team, context={'request': request}).data,
+                'user': CurrentUserSerializer(user, context={'request': request}).data,
+            },
+            status=status.HTTP_201_CREATED,
         )
 
 

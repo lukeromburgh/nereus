@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowRight, Link2, Shield, Users } from "lucide-react";
+import { ArrowRight, Link2, Shield, UserPlus, Users } from "lucide-react";
 import apiClient, { isAxiosError } from "../lib/apiClient";
 import { useAuth, type TeamRole } from "../lib/auth";
 
@@ -10,6 +10,7 @@ type InvitePreview = {
   role: TeamRole;
   status: string;
   expires_at: string;
+  existing_account: boolean;
   team: {
     id: number;
     name: string;
@@ -52,6 +53,11 @@ export default function JoinTeamPage() {
   const [error, setError] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(true);
   const [isAccepting, setIsAccepting] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [isSigningUp, setIsSigningUp] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -126,6 +132,30 @@ export default function JoinTeamPage() {
     }
   }
 
+  async function handleCreateAccount(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !invite) return;
+
+    setIsSigningUp(true);
+    setError(null);
+
+    try {
+      const { data } = await apiClient.post<{ detail: string; team: { id: number } }>(`/api/team-invites/${token}/signup/`, {
+        first_name: firstName,
+        last_name: lastName,
+        password,
+        password_confirm: passwordConfirm,
+      });
+      await refreshUser();
+      setActiveTeamId(data.team.id);
+      navigate("/team", { replace: true });
+    } catch (signupError) {
+      setError(getErrorMessage(signupError, "Failed to create the invited account."));
+    } finally {
+      setIsSigningUp(false);
+    }
+  }
+
   function handleLoginRedirect() {
     navigate("/login", {
       replace: true,
@@ -183,7 +213,7 @@ export default function JoinTeamPage() {
             </div>
             <h2 className="mt-4 text-2xl font-semibold tracking-[-0.02em] text-white">Accept team invite</h2>
             <p className="mt-2 text-[13px] leading-6 text-[rgba(255,255,255,0.52)]">
-              Sign in with the invited email, then accept the invite to activate this workspace in the shell.
+              Sign in with the invited email, or create the invited account here and join the workspace in one step.
             </p>
 
             {error && (
@@ -227,18 +257,97 @@ export default function JoinTeamPage() {
               </div>
             ) : (
               <div className="mt-6 space-y-4">
-                <div className="border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4 text-[13px] leading-6 text-[rgba(255,255,255,0.58)]" style={{ borderRadius: "2px" }}>
-                  Sign in first. The login screen will return you to this invite automatically.
-                </div>
-                <button
-                  type="button"
-                  onClick={handleLoginRedirect}
-                  className="inline-flex h-11 w-full items-center justify-center gap-2 bg-[#00d4ff] px-4 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#081018] transition-colors hover:bg-[#2cdbff]"
-                  style={{ borderRadius: "2px" }}
-                >
-                  <ArrowRight className="h-4 w-4" />
-                  Sign In To Continue
-                </button>
+                {invite?.existing_account ? (
+                  <>
+                    <div className="border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4 text-[13px] leading-6 text-[rgba(255,255,255,0.58)]" style={{ borderRadius: "2px" }}>
+                      An account already exists for {invite.email}. Sign in and the app will bring you back to this invite automatically.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleLoginRedirect}
+                      className="inline-flex h-11 w-full items-center justify-center gap-2 bg-[#00d4ff] px-4 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#081018] transition-colors hover:bg-[#2cdbff]"
+                      style={{ borderRadius: "2px" }}
+                    >
+                      <ArrowRight className="h-4 w-4" />
+                      Sign In To Continue
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <form className="space-y-4" onSubmit={handleCreateAccount}>
+                      <div className="border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4 text-[13px] leading-6 text-[rgba(255,255,255,0.58)]" style={{ borderRadius: "2px" }}>
+                        This invite email does not have an account yet. Create it now and the invite will be accepted automatically. Your invited email becomes your username for later sign-ins.
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[rgba(255,255,255,0.42)]">First Name</span>
+                          <input
+                            type="text"
+                            value={firstName}
+                            onChange={(event) => setFirstName(event.target.value)}
+                            className="h-11 border border-[rgba(255,255,255,0.1)] bg-[rgba(8,11,17,0.92)] px-3 text-[14px] text-white outline-none focus:border-[rgba(0,212,255,0.45)]"
+                            style={{ borderRadius: "2px" }}
+                            placeholder="Avery"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[rgba(255,255,255,0.42)]">Last Name</span>
+                          <input
+                            type="text"
+                            value={lastName}
+                            onChange={(event) => setLastName(event.target.value)}
+                            className="h-11 border border-[rgba(255,255,255,0.1)] bg-[rgba(8,11,17,0.92)] px-3 text-[14px] text-white outline-none focus:border-[rgba(0,212,255,0.45)]"
+                            style={{ borderRadius: "2px" }}
+                            placeholder="Morgan"
+                          />
+                        </label>
+                      </div>
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[rgba(255,255,255,0.42)]">Password</span>
+                        <input
+                          type="password"
+                          value={password}
+                          onChange={(event) => setPassword(event.target.value)}
+                          className="h-11 border border-[rgba(255,255,255,0.1)] bg-[rgba(8,11,17,0.92)] px-3 text-[14px] text-white outline-none focus:border-[rgba(0,212,255,0.45)]"
+                          style={{ borderRadius: "2px" }}
+                          placeholder="At least 8 characters"
+                          required
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[rgba(255,255,255,0.42)]">Confirm Password</span>
+                        <input
+                          type="password"
+                          value={passwordConfirm}
+                          onChange={(event) => setPasswordConfirm(event.target.value)}
+                          className="h-11 border border-[rgba(255,255,255,0.1)] bg-[rgba(8,11,17,0.92)] px-3 text-[14px] text-white outline-none focus:border-[rgba(0,212,255,0.45)]"
+                          style={{ borderRadius: "2px" }}
+                          placeholder="Repeat your password"
+                          required
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={!invite || invite.status !== "pending" || isSigningUp || password.length === 0 || passwordConfirm.length === 0}
+                        className="inline-flex h-11 w-full items-center justify-center gap-2 bg-[#00d4ff] px-4 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#081018] transition-colors hover:bg-[#2cdbff] disabled:cursor-not-allowed disabled:bg-[rgba(255,255,255,0.12)] disabled:text-[rgba(255,255,255,0.34)]"
+                        style={{ borderRadius: "2px" }}
+                      >
+                        <UserPlus className="h-4 w-4" />
+                        {isSigningUp ? "Creating Account..." : "Create Account And Join"}
+                      </button>
+                    </form>
+
+                    <button
+                      type="button"
+                      onClick={handleLoginRedirect}
+                      className="inline-flex h-11 w-full items-center justify-center gap-2 border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-4 text-[12px] font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:border-[rgba(0,212,255,0.3)] hover:text-nereus-accent"
+                      style={{ borderRadius: "2px" }}
+                    >
+                      <ArrowRight className="h-4 w-4" />
+                      I Already Have An Account
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </section>
