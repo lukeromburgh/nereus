@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 from rest_framework import viewsets, parsers, status
@@ -9,6 +10,7 @@ from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.middleware.csrf import get_token
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from .access import (
@@ -44,6 +46,21 @@ from django.db import transaction
 # Do NOT import task stubs — @shared_task stubs overwrite the real
 # worker implementation when django.setup() runs inside the worker.
 from nereus_core.celery import app as celery_app
+
+
+logger = logging.getLogger(__name__)
+
+
+def _enqueue_simulation_run(run_id):
+    try:
+        celery_app.send_task('tasks.run_hydro_simulation', args=[run_id])
+    except Exception as exc:
+        logger.exception('Failed to enqueue simulation task for run %s', run_id)
+        SimulationRun.objects.filter(pk=run_id).update(
+            status=SimulationRun.StatusChoices.FAILED,
+            current_logs=f'Failed to enqueue simulation task: {type(exc).__name__}: {exc}',
+            updated_at=timezone.now(),
+        )
 
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
@@ -545,7 +562,9 @@ class SimulationRunViewSet(viewsets.ModelViewSet):
             # Fire the Celery simulation task (orientation preview is now
             # handled client-side; the preview_stl_orientation task runs only
             # inside the simulation worker's pre-flight, not on every upload).
-            transaction.on_commit(lambda: celery_app.send_task('tasks.run_hydro_simulation', args=[instance.id]))
+            transaction.on_commit(lambda run_id=instance.id: _enqueue_simulation_run(run_id))
+
+        instance.refresh_from_db()
 
     @action(detail=False, methods=['post'])
     def sweep(self, request):

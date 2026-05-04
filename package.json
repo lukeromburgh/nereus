@@ -1,4 +1,17 @@
 {
+  "private": true,
+  "scripts": {
+    "flow": "bash ./scripts/dev.sh",
+    "flow:build": "bash ./scripts/dev.sh start --build",
+    "flow:init": "bash ./scripts/dev.sh init",
+    "flow:down": "bash ./scripts/dev.sh down",
+    "flow:logs": "bash ./scripts/dev.sh logs",
+    "dev": "bash ./scripts/dev.sh",
+    "dev:build": "bash ./scripts/dev.sh start --build",
+    "dev:init": "bash ./scripts/dev.sh init",
+    "dev:down": "bash ./scripts/dev.sh down",
+    "dev:logs": "bash ./scripts/dev.sh logs"
+  },
   "dependencies": {
     "@types/react-router-dom": "^5.3.3",
     "react-router-dom": "^7.13.1"

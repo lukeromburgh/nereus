@@ -37,6 +37,12 @@ import pyvista
 
 logger = logging.getLogger(__name__)
 
+DOMAIN_UPSTREAM_MULTIPLIER = 5.0
+DOMAIN_DOWNSTREAM_MULTIPLIER = 10.0
+DOMAIN_LATERAL_MULTIPLIER = 5.0
+CHECK_MESH_MAX_NON_ORTHOGONALITY = 70.0
+CHECK_MESH_MAX_SKEWNESS = 4.0
+
 
 @app.task(name='tasks.run_hydro_simulation', bind=True)
 def run_hydro_simulation(self, sim_id):
@@ -53,6 +59,7 @@ def run_hydro_simulation(self, sim_id):
     """
     logger.info(f"Received Simulation request: {sim_id}")
     case_dir = f"/data/simulations/{sim_id}"
+    mesh_quality_summary = None
 
     try:
         # Phase 1: Initialize Case
@@ -187,30 +194,13 @@ def run_hydro_simulation(self, sim_id):
             z_len = max(bounds[5] - bounds[4], 1e-9)
             characteristic_len = max(x_len, y_len, z_len)
 
-            half_span = z_len / 2.0
-            chord_approx = x_len
-
-            # Compute domain from corrected chord and span
-            domain = {
-                "x_min": bounds[0] - max(2.0 * chord_approx, 5.0),
-                "x_max": bounds[1] + max(4.0 * chord_approx, 10.0),
-                "y_min": bounds[2] - max(0.5 * chord_approx, 1.0),
-                "y_max": bounds[3] + max(0.5 * chord_approx, 1.0),
-                "z_min": bounds[4] - max(half_span + 0.5, 2.0),
-                "z_max": bounds[5] + max(half_span + 0.5, 2.0),
-            }
+            domain, location_in_mesh = _build_domain_from_bounds(bounds)
 
             mesh_cells = {
                 "nx": max(60, int(40 * mesh_density)),
                 "ny": max(30, int(20 * mesh_density)),
                 "nz": max(30, int(20 * mesh_density)),
             }
-
-            location_in_mesh = (
-                domain["x_min"] + 0.1 * (domain["x_max"] - domain["x_min"]),
-                0.5 * (domain["y_min"] + domain["y_max"]),
-                0.5 * (domain["z_min"] + domain["z_max"]),
-            )
 
         # Phase 2: Generate OpenFOAM Case
         patch_django_status(sim_id, None, error_log="Generating OpenFOAM Case Files...")
@@ -276,6 +266,16 @@ def run_hydro_simulation(self, sim_id):
             patch_django_status(sim_id, "FAILED", error_log="snappyHexMesh Failed")
             return "Mesh Failed"
 
+        patch_django_status(sim_id, "MESHING", error_log="Running checkMesh...")
+        mesh_quality_summary = _run_check_mesh(case_dir, sim_id)
+        if not mesh_quality_summary["mesh_ok"]:
+            patch_django_status(
+                sim_id,
+                "FAILED",
+                error_log=_format_mesh_quality_summary(mesh_quality_summary),
+            )
+            return "Mesh Quality Failed"
+
         # Phase 4: Run simpleFoam Solver
         patch_django_status(sim_id, "RUNNING", error_log="Starting Solver...")
         ok = _run_command(
@@ -302,6 +302,8 @@ def run_hydro_simulation(self, sim_id):
         )
         pp_results = pp.get("results", {})
         pp_manifest = pp.get("file_manifest", {})
+        if mesh_quality_summary is not None:
+            pp_manifest["mesh_quality"] = mesh_quality_summary
 
         # Write results_manifest.json
         out_dir = os.path.join(DJANGO_MEDIA_ROOT, "simulations", str(sim_id))
@@ -468,3 +470,127 @@ def _run_command(cmd, cwd, sim_id, status_prefix=None, divergence_guardrail=Fals
         patch_django_status(sim_id, status_prefix, error_log=logs[-1] if logs else "Complete")
 
     return proc.returncode == 0
+
+
+def _build_domain_from_bounds(bounds):
+    """Derive an external-flow domain from foil bounds.
+
+    The far-field envelope follows the product requirement:
+    5x chord upstream, 10x downstream, and 5x chord laterally.
+    """
+    x_min, x_max, y_min, y_max, z_min, z_max = [float(value) for value in bounds]
+    chord_approx = max(x_max - x_min, 1e-9)
+    upstream = DOMAIN_UPSTREAM_MULTIPLIER * chord_approx
+    downstream = DOMAIN_DOWNSTREAM_MULTIPLIER * chord_approx
+    lateral = DOMAIN_LATERAL_MULTIPLIER * chord_approx
+
+    domain = {
+        "x_min": x_min - upstream,
+        "x_max": x_max + downstream,
+        "y_min": y_min - lateral,
+        "y_max": y_max + lateral,
+        "z_min": z_min - lateral,
+        "z_max": z_max + lateral,
+    }
+
+    location_in_mesh = (
+        domain["x_min"] + 0.1 * (domain["x_max"] - domain["x_min"]),
+        0.5 * (domain["y_min"] + domain["y_max"]),
+        0.5 * (domain["z_min"] + domain["z_max"]),
+    )
+    return domain, location_in_mesh
+
+
+def _parse_check_mesh_output(output):
+    """Extract a compact quality summary from checkMesh output."""
+    non_orth_match = re.search(
+        r"Mesh\s+non-orthogonality\s+Max:\s*([\d.eE+\-]+)\s+average:\s*([\d.eE+\-]+)",
+        output,
+        re.IGNORECASE,
+    )
+    skew_match = re.search(r"Max\s+skewness\s*=\s*([\d.eE+\-]+)", output, re.IGNORECASE)
+    aspect_match = re.search(r"Max\s+aspect\s+ratio\s*=\s*([\d.eE+\-]+)", output, re.IGNORECASE)
+    failed_match = re.search(r"Failed\s+(\d+)\s+mesh\s+checks", output, re.IGNORECASE)
+
+    return {
+        "max_non_orthogonality": float(non_orth_match.group(1)) if non_orth_match else None,
+        "average_non_orthogonality": float(non_orth_match.group(2)) if non_orth_match else None,
+        "max_skewness": float(skew_match.group(1)) if skew_match else None,
+        "max_aspect_ratio": float(aspect_match.group(1)) if aspect_match else None,
+        "failed_checks": int(failed_match.group(1)) if failed_match else 0,
+        "reported_mesh_ok": bool(re.search(r"Mesh\s+OK\.", output, re.IGNORECASE)),
+    }
+
+
+def _mesh_quality_is_acceptable(summary):
+    """Return whether mesh quality passes the minimum external-flow thresholds."""
+    issues = []
+
+    if summary.get("failed_checks", 0) > 0:
+        issues.append(f"{summary['failed_checks']} mesh checks failed")
+
+    max_non_orthogonality = summary.get("max_non_orthogonality")
+    if max_non_orthogonality is not None and max_non_orthogonality > CHECK_MESH_MAX_NON_ORTHOGONALITY:
+        issues.append(
+            f"max non-orthogonality {max_non_orthogonality:.1f} exceeds {CHECK_MESH_MAX_NON_ORTHOGONALITY:.1f}"
+        )
+
+    max_skewness = summary.get("max_skewness")
+    if max_skewness is not None and max_skewness > CHECK_MESH_MAX_SKEWNESS:
+        issues.append(f"max skewness {max_skewness:.2f} exceeds {CHECK_MESH_MAX_SKEWNESS:.2f}")
+
+    return len(issues) == 0, issues
+
+
+def _format_mesh_quality_summary(summary):
+    status = "OK" if summary.get("mesh_ok") else "FAILED"
+    parts = [f"checkMesh {status}"]
+
+    if summary.get("max_non_orthogonality") is not None:
+        avg_non_orthogonality = summary.get("average_non_orthogonality")
+        parts.append(
+            "non-orth max "
+            f"{summary['max_non_orthogonality']:.1f}"
+            + (
+                f" avg {avg_non_orthogonality:.1f}"
+                if avg_non_orthogonality is not None
+                else ""
+            )
+        )
+
+    if summary.get("max_skewness") is not None:
+        parts.append(f"skew {summary['max_skewness']:.2f}")
+
+    if summary.get("max_aspect_ratio") is not None:
+        parts.append(f"aspect ratio {summary['max_aspect_ratio']:.1f}")
+
+    if summary.get("issues"):
+        parts.append("issues: " + "; ".join(summary["issues"]))
+
+    return " | ".join(parts)
+
+
+def _run_check_mesh(cwd, sim_id):
+    """Run checkMesh after snappyHexMesh and return a parsed quality summary."""
+    proc = subprocess.run(
+        ["checkMesh", "-allGeometry", "-allTopology"],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+    )
+    output = "\n".join(part for part in [proc.stdout, proc.stderr] if part).strip()
+    log_path = os.path.join(cwd, "log.checkMesh")
+    with open(log_path, "w", encoding="utf-8") as handle:
+        handle.write(output)
+
+    summary = _parse_check_mesh_output(output)
+    summary["returncode"] = proc.returncode
+    mesh_ok, issues = _mesh_quality_is_acceptable(summary)
+    if proc.returncode != 0:
+        issues = [*issues, f"checkMesh exited with code {proc.returncode}"]
+        mesh_ok = False
+
+    summary["issues"] = issues
+    summary["mesh_ok"] = mesh_ok
+    patch_django_status(sim_id, "MESHING", error_log=_format_mesh_quality_summary(summary))
+    return summary

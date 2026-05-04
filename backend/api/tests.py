@@ -1,9 +1,12 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .models import Team, TeamInvite, TeamMembership
+from .models import Project, SimulationRun, Team, TeamInvite, TeamMembership
+from .serializers import SimulationRunSerializer
 
 
 User = get_user_model()
@@ -112,3 +115,99 @@ class TeamInviteSignupFlowTests(TestCase):
         self.assertEqual(invite.status, TeamInvite.StatusChoices.ACCEPTED)
         self.assertEqual(invite.accepted_by_id, membership.user_id)
         self.assertEqual(membership.role, TeamMembership.RoleChoices.ENGINEER)
+
+
+class SimulationRunPhysicalValidationTests(TestCase):
+    def setUp(self):
+        self.team = Team.objects.create(name="Physics Validation Team")
+        self.project = Project.objects.create(team=self.team, name="Physics Validation Project")
+
+    def _payload(self):
+        return {
+            "project": self.project.id,
+            "mass": 120.0,
+            "payload_weight": 15.0,
+            "center_of_gravity": [0.0, 0.0, 0.0],
+            "velocity": 8.0,
+            "angle_of_attack": 5.0,
+            "water_density": 1025.0,
+            "wave_height": 0.25,
+            "submersion_depth": 0.75,
+            "mesh_density": 1.0,
+            "slice_axis": "y",
+        }
+
+    def test_accepts_physical_run_inputs(self):
+        serializer = SimulationRunSerializer(data=self._payload())
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_rejects_non_physical_run_inputs(self):
+        invalid_cases = [
+            ("velocity", -5.0, "Velocity must be positive."),
+            ("angle_of_attack", 90.0, "Angle of attack must be between -90 and 90 degrees."),
+            ("water_density", 0.0, "Water density must be between 0 and 2000 kg/m^3."),
+            ("mass", 0.0, "Mass must be positive."),
+            ("payload_weight", -1.0, "Payload weight cannot be negative."),
+            ("wave_height", -0.1, "Wave height cannot be negative."),
+            ("submersion_depth", -0.1, "Submersion depth cannot be negative."),
+        ]
+
+        for field_name, invalid_value, expected_message in invalid_cases:
+            with self.subTest(field=field_name):
+                payload = self._payload()
+                payload[field_name] = invalid_value
+
+                serializer = SimulationRunSerializer(data=payload)
+
+                self.assertFalse(serializer.is_valid())
+                self.assertIn(field_name, serializer.errors)
+                self.assertEqual(serializer.errors[field_name][0], expected_message)
+
+
+class SimulationRunDispatchFailureTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="dispatch-admin",
+            email="dispatch-admin@example.com",
+            password="ComplexPass123!",
+        )
+        self.team = Team.objects.create(name="Dispatch Failure Team")
+        TeamMembership.objects.create(
+            team=self.team,
+            user=self.user,
+            role=TeamMembership.RoleChoices.TEAM_ADMIN,
+        )
+        self.project = Project.objects.create(team=self.team, name="Dispatch Failure Project")
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def _payload(self):
+        return {
+            "project": self.project.id,
+            "mass": 120.0,
+            "payload_weight": 15.0,
+            "center_of_gravity": [0.0, 0.0, 0.0],
+            "velocity": 8.0,
+            "angle_of_attack": 5.0,
+            "water_density": 1025.0,
+            "wave_height": 0.25,
+            "submersion_depth": 0.75,
+            "mesh_density": 1.0,
+            "slice_axis": "y",
+        }
+
+    def test_run_is_marked_failed_when_task_dispatch_fails(self):
+        with patch("api.views.celery_app.send_task", side_effect=RuntimeError("broker unavailable")) as mocked_send_task:
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post("/api/runs/", self._payload(), format="json")
+
+        self.assertEqual(response.status_code, 201)
+
+        run = SimulationRun.objects.get(pk=response.json()["id"])
+
+        mocked_send_task.assert_called_once_with("tasks.run_hydro_simulation", args=[run.id])
+        self.assertEqual(run.status, SimulationRun.StatusChoices.FAILED)
+        self.assertIn("Failed to enqueue simulation task", run.current_logs)
+        self.assertIn("RuntimeError: broker unavailable", run.current_logs)

@@ -23,7 +23,7 @@ boundaryField {
         type            noSlip; // Water "sticks" to the foil surface
     }
     walls {
-        type            noSlip;
+        type            slip; // Far-field boundaries should not add artificial wall drag
     }
 }"""
 
@@ -333,8 +333,7 @@ boundaryField {
         value           uniform {{ k }};
     }
     walls {
-        type            kqRWallFunction;
-        value           uniform {{ k }};
+        type            zeroGradient;
     }
 }"""
 
@@ -358,8 +357,7 @@ boundaryField {
         value           uniform {{ omega }};
     }
     walls {
-        type            omegaWallFunction;
-        value           uniform {{ omega }};
+        type            zeroGradient;
     }
 }"""
 
@@ -384,7 +382,7 @@ boundaryField {
         value           uniform 0;
     }
     walls {
-        type            nutkWallFunction;
+        type            calculated;
         value           uniform 0;
     }
 }"""

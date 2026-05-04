@@ -50,6 +50,47 @@ Nereus is a browser-based computational fluid dynamics (CFD) platform for simula
 
 ---
 
+## Local Dev Quick Start
+
+For normal local development, start everything from the repo root with one command:
+
+```bash
+./flow
+```
+
+If you prefer npm scripts, the same entrypoint is available as:
+
+```bash
+npm run flow
+```
+
+That command:
+
+- starts `db` and `redis`
+- waits for Postgres to accept connections
+- runs Django migrations inside the compose `api` container
+- starts the compose `api` and `worker` services
+- starts the Vite frontend on `http://localhost:5173`
+
+Useful companion commands:
+
+```bash
+./flow init        # first-time setup, including migrations and superuser creation
+./flow start --build
+./flow logs        # tail Django API and worker logs
+./flow down        # stop the Docker services
+```
+
+Equivalent npm aliases also exist: `npm run flow:init`, `npm run flow:build`, `npm run flow:logs`, and `npm run flow:down`.
+
+Notes:
+
+- `./flow` is the daily path. It replaces the older habit of separately running host Django plus Docker.
+- The frontend still runs locally with Vite; the backend services run through Docker Compose.
+- `backend/.env` and `frontend/.env` must exist before running the wrapper.
+
+---
+
 ## Data Model
 
 Three core Django models:

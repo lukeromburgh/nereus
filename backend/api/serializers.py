@@ -402,6 +402,13 @@ class SimulationRunSerializer(serializers.ModelSerializer):
         project = data.get('project') or (self.instance and self.instance.project)
         asset = data.get('asset') or (self.instance and self.instance.asset)
 
+        def _incoming_value(field_name):
+            if field_name in data:
+                return data[field_name]
+            if self.instance is not None:
+                return getattr(self.instance, field_name, None)
+            return None
+
         if request is not None and not request.user.is_superuser and project is not None:
             if not user_can_access_project(request.user, project):
                 raise serializers.ValidationError({'project': 'You do not have access to this project.'})
@@ -410,6 +417,39 @@ class SimulationRunSerializer(serializers.ModelSerializer):
 
         if asset is not None and project is not None and asset.project_id != project.id:
             raise serializers.ValidationError({'asset': 'Asset must belong to the selected project.'})
+
+        errors = {}
+
+        velocity = _incoming_value('velocity')
+        if velocity is not None and velocity <= 0:
+            errors['velocity'] = 'Velocity must be positive.'
+
+        angle_of_attack = _incoming_value('angle_of_attack')
+        if angle_of_attack is not None and not (-90 < angle_of_attack < 90):
+            errors['angle_of_attack'] = 'Angle of attack must be between -90 and 90 degrees.'
+
+        water_density = _incoming_value('water_density')
+        if water_density is not None and not (0 < water_density < 2000):
+            errors['water_density'] = 'Water density must be between 0 and 2000 kg/m^3.'
+
+        mass = _incoming_value('mass')
+        if mass is not None and mass <= 0:
+            errors['mass'] = 'Mass must be positive.'
+
+        payload_weight = _incoming_value('payload_weight')
+        if payload_weight is not None and payload_weight < 0:
+            errors['payload_weight'] = 'Payload weight cannot be negative.'
+
+        wave_height = _incoming_value('wave_height')
+        if wave_height is not None and wave_height < 0:
+            errors['wave_height'] = 'Wave height cannot be negative.'
+
+        submersion_depth = _incoming_value('submersion_depth')
+        if submersion_depth is not None and submersion_depth < 0:
+            errors['submersion_depth'] = 'Submersion depth cannot be negative.'
+
+        if errors:
+            raise serializers.ValidationError(errors)
 
         return data
 

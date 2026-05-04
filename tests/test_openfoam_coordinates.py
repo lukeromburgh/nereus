@@ -24,7 +24,12 @@ if _WORKER_DIR not in sys.path:
     sys.path.insert(0, _WORKER_DIR)
 
 from template_manager import TemplateManager
-from tasks import compute_first_layer_thickness
+from tasks import (
+    _build_domain_from_bounds,
+    _mesh_quality_is_acceptable,
+    _parse_check_mesh_output,
+    compute_first_layer_thickness,
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -146,49 +151,40 @@ def test_location_in_mesh_outside_foil(make_foil_stl, tmp_path):
     bounds = foil_trimesh.bounds  # [[xmin,ymin,zmin],[xmax,ymax,zmax]]
     char_len = max(bounds[1] - bounds[0])
 
-    # Replicate the domain and locationInMesh logic from tasks.py
-    upstream = 5.0 * char_len
-    downstream = 10.0 * char_len
-    lateral = 5.0 * char_len
-
-    domain = {
-        "x_min": float(bounds[0][0]) - upstream,
-        "x_max": float(bounds[1][0]) + downstream,
-        "y_min": float(bounds[0][1]) - lateral,
-        "y_max": float(bounds[1][1]) + lateral,
-        "z_min": float(bounds[0][2]) - lateral,
-        "z_max": float(bounds[1][2]) + lateral,
-    }
-
+    domain, loc = _build_domain_from_bounds(
+        (
+            bounds[0][0], bounds[1][0],
+            bounds[0][1], bounds[1][1],
+            bounds[0][2], bounds[1][2],
+        )
+    )
     lx = domain["x_max"] - domain["x_min"]
     ly = domain["y_max"] - domain["y_min"]
     lz = domain["z_max"] - domain["z_min"]
-
-    loc = np.array([
-        domain["x_min"] + 0.1 * lx,
-        0.5 * (domain["y_min"] + domain["y_max"]),
-        0.5 * (domain["z_min"] + domain["z_max"]),
-    ])
+    loc = np.array(loc)
 
     # (a) Inside domain
     assert domain["x_min"] < loc[0] < domain["x_max"]
     assert domain["y_min"] < loc[1] < domain["y_max"]
     assert domain["z_min"] < loc[2] < domain["z_max"]
 
-    # (b) Outside the foil (negative signed distance = outside for watertight mesh)
-    # For a box this is reliable.
-    sd = trimesh.proximity.signed_distance(foil_trimesh, [loc])
-    assert sd[0] < 0, f"locationInMesh appears to be inside the foil: signed_dist={sd[0]:.4f}"
+    # (b) Outside the foil.
+    # For the current placement logic the point should be safely upstream of the foil,
+    # so an axis-aligned bounds check is sufficient and avoids an optional rtree dep.
+    assert loc[0] < bounds[0][0], (
+        f"locationInMesh should be upstream of the foil: loc_x={loc[0]:.4f}, "
+        f"foil_x_min={bounds[0][0]:.4f}"
+    )
 
     # (c) Not within 10 % of any domain wall
     margin_x = 0.1 * lx
     margin_y = 0.1 * ly
     margin_z = 0.1 * lz
-    assert loc[0] > domain["x_min"] + margin_x
+    assert loc[0] >= domain["x_min"] + margin_x
     assert loc[0] < domain["x_max"] - margin_x
-    assert loc[1] > domain["y_min"] + margin_y
+    assert loc[1] >= domain["y_min"] + margin_y
     assert loc[1] < domain["y_max"] - margin_y
-    assert loc[2] > domain["z_min"] + margin_z
+    assert loc[2] >= domain["z_min"] + margin_z
     assert loc[2] < domain["z_max"] - margin_z
 
 
@@ -216,17 +212,31 @@ class TestDomainSizing:
         y_min_expected = foil_y_centre - char_len / 2 - lateral
         y_max_expected = foil_y_centre + char_len / 2 + lateral
 
-        # Replicate tasks.py domain logic
         bounds = [foil_x_min, foil_x_max, -char_len / 2, char_len / 2, -0.05, 0.05]
-        domain_x_min = bounds[0] - upstream
-        domain_x_max = bounds[1] + downstream
-        domain_y_min = bounds[2] - lateral
-        domain_y_max = bounds[3] + lateral
+        domain, _ = _build_domain_from_bounds(bounds)
+        domain_x_min = domain["x_min"]
+        domain_x_max = domain["x_max"]
+        domain_y_min = domain["y_min"]
+        domain_y_max = domain["y_max"]
 
         assert abs(domain_x_min - x_min_expected) < tol
         assert abs(domain_x_max - x_max_expected) < tol
         assert abs(domain_y_min - y_min_expected) < tol
         assert abs(domain_y_max - y_max_expected) < tol
+
+
+def test_farfield_walls_use_slip_compatible_boundary_conditions(tmp_path):
+    case_dir = _init_case(tmp_path)
+
+    u_text = _read_case_file(case_dir, "0/U")
+    k_text = _read_case_file(case_dir, "0/k")
+    omega_text = _read_case_file(case_dir, "0/omega")
+    nut_text = _read_case_file(case_dir, "0/nut")
+
+    assert re.search(r"walls\s*\{[^}]*type\s+slip;", u_text, re.DOTALL)
+    assert re.search(r"walls\s*\{[^}]*type\s+zeroGradient;", k_text, re.DOTALL)
+    assert re.search(r"walls\s*\{[^}]*type\s+zeroGradient;", omega_text, re.DOTALL)
+    assert re.search(r"walls\s*\{[^}]*type\s+calculated;", nut_text, re.DOTALL)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -238,7 +248,7 @@ class TestFirstLayerThickness:
         y1 = compute_first_layer_thickness(
             velocity=5.0, nu=1e-6, char_len=1.0, y_plus_target=1.0
         )
-        assert 1e-5 < y1 < 1e-3, f"y1={y1:.6e} outside plausible range for water at 5 m/s"
+        assert 1e-6 < y1 < 1e-4, f"y1={y1:.6e} outside plausible range for water at 5 m/s"
 
     def test_yplus_scaling(self):
         y1_1 = compute_first_layer_thickness(
@@ -261,6 +271,44 @@ class TestFirstLayerThickness:
         assert y1_high < y1_low, (
             f"Higher velocity should produce thinner BL: y1(20)={y1_high:.6e} vs y1(5)={y1_low:.6e}"
         )
+
+
+class TestCheckMeshParsing:
+    def test_good_mesh_is_accepted(self):
+        output = """
+        Mesh non-orthogonality Max: 38.4 average: 6.2
+        Max skewness = 1.73 OK.
+        Max aspect ratio = 24.8 OK.
+        Mesh OK.
+        """
+
+        summary = _parse_check_mesh_output(output)
+        acceptable, issues = _mesh_quality_is_acceptable(summary)
+
+        assert summary["reported_mesh_ok"] is True
+        assert summary["max_non_orthogonality"] == pytest.approx(38.4)
+        assert summary["average_non_orthogonality"] == pytest.approx(6.2)
+        assert summary["max_skewness"] == pytest.approx(1.73)
+        assert summary["max_aspect_ratio"] == pytest.approx(24.8)
+        assert summary["failed_checks"] == 0
+        assert acceptable is True
+        assert issues == []
+
+    def test_bad_mesh_is_rejected(self):
+        output = """
+        Mesh non-orthogonality Max: 81.4 average: 12.1
+        Max skewness = 5.12 OK.
+        Max aspect ratio = 220.0 OK.
+        Failed 2 mesh checks.
+        """
+
+        summary = _parse_check_mesh_output(output)
+        acceptable, issues = _mesh_quality_is_acceptable(summary)
+
+        assert acceptable is False
+        assert any("mesh checks failed" in issue for issue in issues)
+        assert any("non-orthogonality" in issue for issue in issues)
+        assert any("skewness" in issue for issue in issues)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
