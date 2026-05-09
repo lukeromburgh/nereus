@@ -21,5 +21,8 @@ env/
 # OS
 .DS_Store
 
+# Local flow state
+.flow-build-state
+
 # Simulation data
 data/

@@ -12,7 +12,7 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 RUN pip3 install --no-cache-dir --upgrade pip \
 	&& pip3 install --no-cache-dir celery redis pyvista meshio jinja2 requests trimesh pygltflib \
 	   "Django>=4.2,<5" djangorestframework django-cors-headers \
-	   python-decouple dj-database-url==1.3.0 psycopg2-binary
+	   python-decouple dj-database-url==0.5.0 psycopg2-binary
 
 COPY . /app
 WORKDIR /app

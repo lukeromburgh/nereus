@@ -376,11 +376,14 @@ export const useSimStore = create<SimulationState>((set) => ({
       isPlaying: false,
     }),
   updateSim: (data) =>
-    set(() => ({
+    set((state) => ({
       status: data.status,
       logs: data.current_logs || "",
       resultMeshPath: data.result_mesh_path || null,
       resultSequencePath: data.result_sequence_path || null,
+      convergenceSeries: Array.isArray(data.convergence_series)
+        ? data.convergence_series
+        : state.convergenceSeries,
       orientationPreviewUrl: data.orientation_preview_url || null,
       geometryDimensions: data.geometry_dimensions || null,
       geometryAxesDetected: data.geometry_axes_detected || null,

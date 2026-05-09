@@ -72,6 +72,8 @@ That command:
 - starts the compose `api` and `worker` services
 - starts the Vite frontend on `http://localhost:5173`
 
+When startup is successful, `./flow` stays attached to the Vite dev server and keeps that terminal occupied. That is expected. The success indicator is the Vite banner showing `ready` plus the local URL.
+
 Useful companion commands:
 
 ```bash
@@ -88,6 +90,7 @@ Notes:
 - `./flow` is the daily path. It replaces the older habit of separately running host Django plus Docker.
 - The frontend still runs locally with Vite; the backend services run through Docker Compose.
 - `backend/.env` and `frontend/.env` must exist before running the wrapper.
+- Press `Ctrl+C` to stop the foreground Vite process. Run `./flow down` afterwards if you also want to stop the Docker services.
 
 ---
 

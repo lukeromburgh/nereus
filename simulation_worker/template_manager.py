@@ -190,15 +190,19 @@ gradSchemes
 divSchemes
 {
     default         none;
-    div(phi,U)      bounded Gauss linearUpwind grad(U);
-    div(phi,k)      bounded Gauss upwind;
-    div(phi,omega)  bounded Gauss upwind;
+    // limitedLinearV is more robust than linearUpwind near poor-quality cells
+    // (inverted tets / high non-orth) while still being second-order accurate.
+    div(phi,U)      bounded Gauss limitedLinearV 1;
+    div(phi,k)      bounded Gauss limitedLinear 1;
+    div(phi,omega)  bounded Gauss limitedLinear 1;
     div((nuEff*dev2(T(grad(U))))) Gauss linear;
 }
 
 laplacianSchemes
 {
-    default         Gauss linear corrected;
+    // limited corrected 0.5 blends between uncorrected (stable) and corrected
+    // (accurate) — appropriate for meshes with max non-orth ~70-85 degrees.
+    default         Gauss linear limited corrected 0.5;
 }
 
 interpolationSchemes
@@ -208,7 +212,7 @@ interpolationSchemes
 
 snGradSchemes
 {
-    default         corrected;
+    default         limited corrected 0.5;
 }
 
 wallDist
@@ -223,11 +227,34 @@ FoamFile { version 2.0; format ascii; class dictionary; location "system"; objec
 
 solvers
 {
+    // p_rgh is the solved pressure field when gravity is enabled.
+    // Both p_rgh and p_rghFinal must be defined; without them simpleFoam
+    // falls back to the 'p' entry which causes pressure-velocity oscillation.
+    p_rgh
+    {
+        solver          GAMG;
+        tolerance       1e-7;
+        relTol          0.01;
+        smoother        GaussSeidel;
+        nPreSweeps      0;
+        nPostSweeps     2;
+        cacheAgglomeration true;
+        agglomerator    faceAreaPair;
+        nCellsInCoarsestLevel 10;
+        mergeLevels     1;
+    }
+
+    p_rghFinal
+    {
+        $p_rgh;
+        relTol          0;
+    }
+
     p
     {
         solver          GAMG;
         tolerance       1e-7;
-        relTol          0.1;
+        relTol          0.01;
         smoother        GaussSeidel;
         nPreSweeps      0;
         nPostSweeps     2;
@@ -264,10 +291,16 @@ solvers
 
 SIMPLE
 {
-    nNonOrthogonalCorrectors 1;
+    // consistent yes reduces pressure-velocity coupling oscillation on
+    // non-orthogonal meshes by using a consistent velocity interpolation.
+    consistent      yes;
+    // 3 correctors needed for max non-orthogonality ~70-85 degrees.
+    // 1 corrector was leaving pressure errors that caused the oscillation.
+    nNonOrthogonalCorrectors 3;
 
     residualControl
     {
+        p_rgh           1e-4;
         p               1e-4;
         U               1e-5;
         k               1e-4;
@@ -279,11 +312,12 @@ relaxationFactors
 {
     fields
     {
-        p               0.3;
+        p_rgh           0.2;
+        p               0.2;
     }
     equations
     {
-        U               0.7;
+        U               0.5;
         k               0.5;
         omega           0.5;
     }
@@ -403,10 +437,10 @@ geometry {
 }
 
 castellatedMeshControls {
-    maxLocalCells 1000000;
-    maxGlobalCells 2000000;
+    maxLocalCells 2000000;
+    maxGlobalCells 5000000;
     minRefinementCells 0;
-    nCellsBetweenLevels 1;
+    nCellsBetweenLevels 3;
     resolveFeatureAngle 30;
     allowFreeStandingZoneFaces true;
 
@@ -439,17 +473,24 @@ addLayersControls
     relativeSizes       false;
     expansionRatio      {{ layer_expansion }};
     firstLayerThickness {{ first_layer_thickness }};
-    minThickness        {{ first_layer_thickness * 0.1 }};
+    // minThickness prevents OpenFOAM from squeezing layers into geometry
+    // where they would invert.  10% of firstLayerThickness is the target
+    // but never less than 1e-8 (avoids divisions on very thin y+ targets).
+    minThickness        {{ [first_layer_thickness * 0.1, 1e-8] | max }};
     nGrow               0;
-    featureAngle        60;
-    nRelaxIter          5;
-    nSmoothSurfaceNormals 1;
+    // 120 deg: layers stop at the trailing-edge feature (~30 deg included
+    // angle) before cells invert.  60 deg was too permissive and caused
+    // 14 inverted faces in run 107.
+    featureAngle        120;
+    nRelaxIter          10;
+    nSmoothSurfaceNormals 3;
     nSmoothNormals      3;
     nSmoothThickness    10;
     maxFaceThicknessRatio 0.5;
     maxThicknessToMedialRatio 0.3;
     minMedianAxisAngle  90;
-    nBufferCellsNoExtrude 0;
+    // 1-cell buffer at feature stops abrupt layer-height jumps that cause skew.
+    nBufferCellsNoExtrude 1;
     nLayerIter          50;
 
     layers
@@ -529,8 +570,9 @@ boundaryField {
 
 SURFACE_FEATURE_EXTRACT_TEMPLATE = """/*--------------------------------*- C++ -*----------------------------------*/
 FoamFile { version 2.0; format ascii; class dictionary;
-           object surfaceFeatureExtractDict; }
+           object surfaceFeaturesDict; }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+// OF11: surfaceFeatureExtract replaced by surfaceFeatures + surfaceFeaturesDict
 
 foil.stl
 {
@@ -648,11 +690,13 @@ class TemplateManager:
         self.write_file("constant/transportProperties", TRANSPORT_PROPERTIES_TEMPLATE, {"nu": nu})
         self.write_file("constant/turbulenceProperties", TURBULENCE_PROPERTIES_TEMPLATE, {})
         
-        # 4. Write the surfaceFeatureExtractDict (edge refinement)
-        self.write_file("system/surfaceFeatureExtractDict", SURFACE_FEATURE_EXTRACT_TEMPLATE, {})
+        # 4. Write the surfaceFeaturesDict (edge refinement) — OF11 uses surfaceFeatures utility
+        self.write_file("system/surfaceFeaturesDict", SURFACE_FEATURE_EXTRACT_TEMPLATE, {})
 
         # 5. Write the snappyHexMeshDict (mesh shrink-wrap + layers + feature edges)
-        self.write_file("system/snappyHexMeshDict", SHM_TEMPLATE, {
+        # eMesh_available starts False; call refresh_snappy_features() after
+        # surfaceFeatureExtract to re-render with edges enabled.
+        self._snappy_context = {
             "loc_x": location_in_mesh[0],
             "loc_y": location_in_mesh[1],
             "loc_z": location_in_mesh[2],
@@ -661,8 +705,9 @@ class TemplateManager:
             "layer_expansion": layer_expansion,
             "first_layer_thickness": first_layer_thickness,
             "feature_level": feature_level,
-            "eMesh_available": False,  # updated to True after surfaceFeatureExtract succeeds
-        })
+            "eMesh_available": False,
+        }
+        self.write_file("system/snappyHexMeshDict", SHM_TEMPLATE, self._snappy_context)
 
         # 5. Write the blockMeshDict (Base mesh required by snappyHexMesh)
         domain = domain or {
@@ -682,4 +727,44 @@ class TemplateManager:
                 **domain,
                 **mesh_cells,
             },
+        )
+
+    def refresh_snappy_features(self):
+        """Re-render snappyHexMeshDict with feature edges enabled.
+
+        Call this after surfaceFeatures has run.  If the expected
+        ``constant/triSurface/foil.eMesh`` output exists the dict is
+        re-written with ``eMesh_available=True``; snappyHexMesh then uses
+        the extracted sharp edges to guide the snap phase, eliminating the
+        inverted-pyramid faces that appear near the trailing edge when no
+        feature guidance is provided.
+
+        OpenFOAM 11 uses ``surfaceFeatures`` (replaces old surfaceFeatureExtract)
+        and writes the edge mesh to ``constant/triSurface/<name>.eMesh``.
+        If the file is absent the dict is left unchanged and a warning is logged.
+        """
+        import glob
+        emesh_candidates = glob.glob(
+            os.path.join(self.case_dir, "constant", "triSurface", "*.eMesh")
+        )
+        if not emesh_candidates:
+            logger.warning(
+                "refresh_snappy_features: no .eMesh file found in "
+                "constant/triSurface — feature edges will not be used"
+            )
+            return
+
+        if not hasattr(self, "_snappy_context"):
+            logger.warning(
+                "refresh_snappy_features: _snappy_context not set — "
+                "call initialize_case() first"
+            )
+            return
+
+        updated_context = dict(self._snappy_context, eMesh_available=True)
+        self.write_file("system/snappyHexMeshDict", SHM_TEMPLATE, updated_context)
+        self._snappy_context = updated_context
+        logger.info(
+            "refresh_snappy_features: re-rendered snappyHexMeshDict with "
+            "eMesh_available=True (%s)", emesh_candidates[0]
         )

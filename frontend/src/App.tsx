@@ -169,7 +169,7 @@ export default function SimulationPage() {
     return () => setToolbarContent(null);
   }, [setToolbarContent]);
 
-  // ── Observer: Polling Hook with exponential back-off (2 s → 60 s cap) ──
+  // ── Observer: Poll active runs on a steady interval for live logs/residuals ──
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     let cancelled = false;
@@ -180,9 +180,7 @@ export default function SimulationPage() {
 
     if (!isActive) return;
 
-    const INITIAL_MS = 2_000;
-    const MAX_MS = 60_000;
-    let delay = INITIAL_MS;
+    const POLL_MS = 3_000;
 
     async function poll() {
       if (cancelled) return;
@@ -196,11 +194,10 @@ export default function SimulationPage() {
       } catch (error) {
         console.error("Polling error fetching run:", error);
       }
-      delay = Math.min(delay * 1.5, MAX_MS);
-      timer = setTimeout(poll, delay);
+      timer = setTimeout(poll, POLL_MS);
     }
 
-    timer = setTimeout(poll, INITIAL_MS);
+    timer = setTimeout(poll, POLL_MS);
     return () => {
       cancelled = true;
       clearTimeout(timer);
