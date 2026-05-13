@@ -14,6 +14,7 @@ simulation workflow by delegating to focused service modules:
 import logging
 import math
 import os
+import select
 import subprocess
 import glob
 import re
@@ -25,7 +26,7 @@ from config import (
     broker_url,
     result_backend,
 )
-from status import patch_django_status, DivergenceError
+from status import patch_django_status, DivergenceError, CancelledRunError
 from geometry import _ensure_foil_stl, normalise_stl_orientation
 from parsers.forces import parse_forces, build_metrics_series, compute_lift_drag_ratio
 from extractors.temporal import extract_temporal_frames
@@ -47,6 +48,7 @@ DOMAIN_LATERAL_MULTIPLIER = 5.0
 # acceptable for external-flow RANS.  Internal skewness remains 0 after snap.
 CHECK_MESH_MAX_NON_ORTHOGONALITY = 85.0
 CHECK_MESH_MAX_SKEWNESS = 20.0
+MIN_PRESENTATION_FOIL_SURFACE_CELLS = 6000
 
 
 @app.task(name='tasks.run_hydro_simulation', bind=True)
@@ -67,6 +69,8 @@ def run_hydro_simulation(self, sim_id):
     mesh_quality_summary = None
 
     try:
+        _raise_if_cancelled(sim_id)
+
         # Phase 1: Initialize Case
         patch_django_status(sim_id, "PENDING", error_log="Initializing Job Configuration...")
         os.makedirs(case_dir, exist_ok=True)
@@ -128,6 +132,7 @@ def run_hydro_simulation(self, sim_id):
         }
         domain = dict(default_domain)
         mesh_cells = {"nx": 40, "ny": 20, "nz": 20}
+        refinement_regions = []
         location_in_mesh = (
             domain["x_min"] + 0.1 * (domain["x_max"] - domain["x_min"]),
             0.5 * (domain["y_min"] + domain["y_max"]),
@@ -197,6 +202,7 @@ def run_hydro_simulation(self, sim_id):
             characteristic_len = max(x_len, y_len, z_len)
 
             domain, location_in_mesh = _build_domain_from_bounds(bounds)
+            refinement_regions = _build_refinement_regions(bounds, mesh_density, feature_level)
 
             # Each foil dimension must span at least 2 background cells so
             # snappyHexMesh castellation can reliably detect the surface.
@@ -218,6 +224,7 @@ def run_hydro_simulation(self, sim_id):
             }
 
         # Phase 2: Generate OpenFOAM Case
+        _raise_if_cancelled(sim_id)
         patch_django_status(sim_id, None, error_log="Generating OpenFOAM Case Files...")
         from template_manager import TemplateManager
 
@@ -245,6 +252,7 @@ def run_hydro_simulation(self, sim_id):
             feature_level=feature_level,
             enable_gravity=enable_gravity,
             chord_m=characteristic_len,
+            refinement_regions=refinement_regions,
         )
         patch_django_status(sim_id, "MESHING", error_log="Mesh Generation Started...")
 
@@ -279,6 +287,7 @@ def run_hydro_simulation(self, sim_id):
                 feature_level=feature_level,
                 enable_gravity=enable_gravity,
                 chord_m=characteristic_len,
+                refinement_regions=refinement_regions,
             )
             mesh_ok, mesh_quality_summary = _run_mesh_pipeline(case_dir, sim_id, tmpl)
             mesh_quality_summary["retried_without_layers"] = True
@@ -292,6 +301,7 @@ def run_hydro_simulation(self, sim_id):
             return "Mesh Quality Failed"
 
         # Phase 4: Run simpleFoam Solver
+        _raise_if_cancelled(sim_id)
         patch_django_status(sim_id, "RUNNING", error_log="Starting Solver...")
         ok = _run_command(
             ["simpleFoam"],
@@ -307,6 +317,7 @@ def run_hydro_simulation(self, sim_id):
             return "Solver Failed"
 
         # Phase 5: Post-Processing Pipeline
+        _raise_if_cancelled(sim_id)
         patch_django_status(sim_id, None, error_log="Running post-processing pipeline...")
 
         pp = post_process(
@@ -334,6 +345,14 @@ def run_hydro_simulation(self, sim_id):
             "My_pitch": "cm_pitch", "Mx_roll": "roll_moment", "Mz_yaw": "yaw_moment",
             "yplus_max": "wall_yplus_max", "yplus_mean": "wall_yplus_mean",
         }
+        mesh_diagnostics = dict(mesh_quality_summary or {})
+        mesh_diagnostics["foil_surface"] = {
+            "patch_found": bool(pp_results.get("foil_surface_patch_found")),
+            "cell_count": int(pp_results.get("foil_surface_cell_count") or 0),
+            "point_count": int(pp_results.get("foil_surface_point_count") or 0),
+        }
+        mesh_diagnostics = _assess_mesh_presentation_quality(mesh_diagnostics)
+
         normalized = {}
         for k, v in pp_results.items():
             normalized[KEY_MAP.get(k, k)] = v
@@ -343,9 +362,11 @@ def run_hydro_simulation(self, sim_id):
         model_fields = {f.name for f in SimulationRun._meta.get_fields()}
         scalar_fields = {k: v for k, v in normalized.items() if k in model_fields}
         scalar_fields["file_manifest"] = pp_manifest
+        scalar_fields["mesh_diagnostics"] = mesh_diagnostics
         SimulationRun.objects.filter(id=sim_id).update(**scalar_fields)
 
         # Phase 6: Temporal Frame Extraction
+        _raise_if_cancelled(sim_id)
         patch_django_status(sim_id, None, error_log="Extracting temporal frames...")
         try:
             temporal = extract_temporal_frames(
@@ -413,11 +434,14 @@ def run_hydro_simulation(self, sim_id):
             frame_mapping=completed_payload.get("frame_mapping"),
             metrics_series=completed_payload.get("metrics_series"),
             convergence_series=completed_payload.get("convergence_series"),
+            mesh_diagnostics=mesh_diagnostics,
         ):
             logger.error(f"Failed to persist completed status for simulation {sim_id}")
-
         return f"Simulation {sim_id} Finished"
 
+    except CancelledRunError:
+        patch_django_status(sim_id, "CANCELLED", error_log="Run cancelled by user.")
+        return f"Simulation {sim_id} Cancelled"
     except DivergenceError:
         return f"Simulation {sim_id} Halted due to divergence"
     except Exception as e:
@@ -460,9 +484,20 @@ def _run_command(cmd, cwd, sim_id, status_prefix=None, divergence_guardrail=Fals
 
     log_fh = open(log_file, 'w') if log_file else None
     try:
-        for line in iter(proc.stdout.readline, ""):
+        while True:
+            _raise_if_cancelled(sim_id, proc)
+
+            ready, _, _ = select.select([proc.stdout], [], [], 1.0)
+            if not ready:
+                if proc.poll() is not None:
+                    break
+                continue
+
+            line = proc.stdout.readline()
             if not line:
-                break
+                if proc.poll() is not None:
+                    break
+                continue
             raw_line_count += 1
             stripped = line.rstrip()
             if stripped:
@@ -488,7 +523,7 @@ def _run_command(cmd, cwd, sim_id, status_prefix=None, divergence_guardrail=Fals
                             value = float(residual_match.group(2))
                         except ValueError:
                             value = None
-                        if value is not None and field not in current_solver_residuals:
+                        if value is not None:
                             current_solver_residuals[field] = value
             if log_fh:
                 log_fh.write(line)
@@ -525,6 +560,7 @@ def _run_command(cmd, cwd, sim_id, status_prefix=None, divergence_guardrail=Fals
         current_solver_time,
         current_solver_residuals,
     )
+    _raise_if_cancelled(sim_id, proc)
     proc.wait()
     if status_prefix:
         patch_django_status(
@@ -544,10 +580,18 @@ def _append_live_convergence_point(series, time_value, residuals):
     series.append({
         "iteration": len(series),
         "time": time_value,
-        "residual": max(residuals.values()),
+        "residual": _select_convergence_residual(residuals),
     })
     if len(series) > 1000:
         del series[:-1000]
+
+
+def _select_convergence_residual(residuals):
+    for field in ("p_rgh", "p"):
+        value = residuals.get(field)
+        if value is not None:
+            return value
+    return max(residuals.values())
 
 
 def _summarize_logs(logs, tail_lines=8):
@@ -584,6 +628,46 @@ def _build_domain_from_bounds(bounds):
         0.5 * (domain["z_min"] + domain["z_max"]),
     )
     return domain, location_in_mesh
+
+
+def _build_refinement_regions(bounds, mesh_density, feature_level):
+    """Build chord-scaled local refinement shells around the foil."""
+    x_min, x_max, y_min, y_max, z_min, z_max = [float(value) for value in bounds]
+    chord = max(x_max - x_min, 1e-9)
+    surface_max_level = max(5, int(feature_level))
+    inner_level = max(4, surface_max_level - (0 if mesh_density >= 1.25 else 1))
+    outer_level = max(3, inner_level - 1)
+
+    inner_x_upstream = 0.20 * chord
+    inner_x_downstream = 0.35 * chord
+    inner_lateral = 0.20 * chord
+
+    outer_x_upstream = 0.60 * chord
+    outer_x_downstream = 1.00 * chord
+    outer_lateral = 0.50 * chord
+
+    return [
+        {
+            "name": "foilInnerShell",
+            "min_x": x_min - inner_x_upstream,
+            "max_x": x_max + inner_x_downstream,
+            "min_y": y_min - inner_lateral,
+            "max_y": y_max + inner_lateral,
+            "min_z": z_min - inner_lateral,
+            "max_z": z_max + inner_lateral,
+            "level": inner_level,
+        },
+        {
+            "name": "foilOuterShell",
+            "min_x": x_min - outer_x_upstream,
+            "max_x": x_max + outer_x_downstream,
+            "min_y": y_min - outer_lateral,
+            "max_y": y_max + outer_lateral,
+            "min_z": z_min - outer_lateral,
+            "max_z": z_max + outer_lateral,
+            "level": outer_level,
+        },
+    ]
 
 
 def _parse_check_mesh_output(output):
@@ -697,6 +781,66 @@ def _should_retry_without_layers(summary):
     return False
 
 
+def _assess_mesh_presentation_quality(summary):
+    """Add non-fatal presentation-quality warnings to a mesh summary."""
+    issues = list(summary.get("presentation_issues") or [])
+
+    surface_features = summary.get("surface_features") or {}
+    if not surface_features.get("emesh_present"):
+        issues.append("feature edge mesh missing; sharp-edge snapping is likely degraded")
+
+    if not (summary.get("snappy") or {}).get("features_block_populated"):
+        issues.append("snappy features() block was not populated before snapping")
+
+    foil_surface = summary.get("foil_surface") or {}
+    if not foil_surface.get("patch_found"):
+        issues.append("foil surface patch was not exported from post-processing")
+    else:
+        cell_count = int(foil_surface.get("cell_count") or 0)
+        if cell_count < MIN_PRESENTATION_FOIL_SURFACE_CELLS:
+            issues.append(
+                f"foil surface cell count {cell_count} is below presentation threshold {MIN_PRESENTATION_FOIL_SURFACE_CELLS}"
+            )
+
+    summary["presentation_issues"] = issues
+    summary["presentation_ok"] = len(issues) == 0
+    return summary
+
+
+def _is_run_cancelled(sim_id):
+    try:
+        from api.models import SimulationRun
+
+        return SimulationRun.objects.filter(
+            id=sim_id,
+            status=SimulationRun.StatusChoices.CANCELLED,
+        ).exists()
+    except Exception as exc:
+        logger.warning("Failed checking cancelled state for simulation %s: %s", sim_id, exc)
+        return False
+
+
+def _terminate_process(proc):
+    if proc is None or proc.poll() is not None:
+        return
+
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+
+
+def _raise_if_cancelled(sim_id, proc=None):
+    if not _is_run_cancelled(sim_id):
+        return
+
+    _terminate_process(proc)
+    patch_django_status(sim_id, "CANCELLED", error_log="Run cancelled by user.")
+    raise CancelledRunError(f"Simulation {sim_id} cancelled by user")
+
+
 def _run_mesh_pipeline(case_dir, sim_id, tmpl=None):
     """Run the standard blockMesh -> surfaceFeatureExtract -> snappyHexMesh -> checkMesh flow.
 
@@ -711,6 +855,7 @@ def _run_mesh_pipeline(case_dir, sim_id, tmpl=None):
         trailing edge.
     """
     patch_django_status(sim_id, "MESHING", error_log="Running blockMesh...")
+    _raise_if_cancelled(sim_id)
     mesh_ok = _run_command(
         ["blockMesh"],
         cwd=case_dir,
@@ -720,20 +865,49 @@ def _run_mesh_pipeline(case_dir, sim_id, tmpl=None):
     if not mesh_ok:
         return False, {"mesh_ok": False, "issues": ["blockMesh failed"]}
 
+    diagnostics = {
+        "surface_features": {},
+        "snappy": {},
+    }
+
     patch_django_status(sim_id, "MESHING", error_log="Running surfaceFeatures...")
-    _run_command(
+    _raise_if_cancelled(sim_id)
+    surface_features_ok = _run_command(
         ["surfaceFeatures"],
         cwd=case_dir,
         sim_id=sim_id,
         status_prefix="MESHING",
         log_file=os.path.join(case_dir, "log.surfaceFeatureExtract"),
     )
+    emesh_path = os.path.join(case_dir, "constant", "triSurface", "foil.eMesh")
+    diagnostics["surface_features"] = {
+        "command_succeeded": surface_features_ok,
+        "emesh_present": os.path.exists(emesh_path),
+        "emesh_path": emesh_path if os.path.exists(emesh_path) else None,
+    }
 
     # Re-render snappyHexMeshDict now that .eMesh is available.
     if tmpl is not None:
         tmpl.refresh_snappy_features()
+        snappy_context = getattr(tmpl, "_snappy_context", {})
+        diagnostics["snappy"] = {
+            "features_block_populated": bool(snappy_context.get("eMesh_available")),
+            "surface_refinement_levels": [
+                snappy_context.get("surface_min_level"),
+                snappy_context.get("surface_max_level"),
+            ],
+            "feature_level": snappy_context.get("feature_level"),
+            "refinement_regions": [
+                {
+                    "name": region.get("name"),
+                    "level": region.get("level"),
+                }
+                for region in snappy_context.get("refinement_regions", [])
+            ],
+        }
 
     patch_django_status(sim_id, "MESHING", error_log="Running snappyHexMesh...")
+    _raise_if_cancelled(sim_id)
     mesh_ok = _run_command(
         ["snappyHexMesh", "-overwrite"],
         cwd=case_dir,
@@ -746,7 +920,12 @@ def _run_mesh_pipeline(case_dir, sim_id, tmpl=None):
         return False, {"mesh_ok": False, "issues": ["snappyHexMesh failed"]}
 
     patch_django_status(sim_id, "MESHING", error_log="Running checkMesh...")
-    return True, _run_check_mesh(case_dir, sim_id)
+    _raise_if_cancelled(sim_id)
+    summary = _run_check_mesh(case_dir, sim_id)
+    summary["surface_features"] = diagnostics["surface_features"]
+    summary["snappy"] = diagnostics["snappy"]
+    patch_django_status(sim_id, "MESHING", mesh_diagnostics=summary)
+    return True, summary
 
 
 def _run_check_mesh(cwd, sim_id):

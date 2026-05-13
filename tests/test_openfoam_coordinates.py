@@ -25,7 +25,10 @@ if _WORKER_DIR not in sys.path:
 
 from template_manager import TemplateManager
 from tasks import (
+    MIN_PRESENTATION_FOIL_SURFACE_CELLS,
+    _assess_mesh_presentation_quality,
     _build_domain_from_bounds,
+    _build_refinement_regions,
     _mesh_quality_is_acceptable,
     _parse_check_mesh_output,
     compute_first_layer_thickness,
@@ -309,6 +312,90 @@ class TestCheckMeshParsing:
         assert any("mesh checks failed" in issue for issue in issues)
         assert any("non-orthogonality" in issue for issue in issues)
         assert any("skewness" in issue for issue in issues)
+
+
+def test_snappy_refinement_regions_render(tmp_path):
+    case_dir = _init_case(
+        tmp_path,
+        refinement_regions=[
+            {
+                "name": "foilInnerShell",
+                "min_x": -0.25,
+                "min_y": -0.10,
+                "min_z": -0.05,
+                "max_x": 1.25,
+                "max_y": 0.10,
+                "max_z": 0.05,
+                "level": 5,
+            },
+            {
+                "name": "foilOuterShell",
+                "min_x": -0.50,
+                "min_y": -0.25,
+                "min_z": -0.15,
+                "max_x": 1.75,
+                "max_y": 0.25,
+                "max_z": 0.15,
+                "level": 4,
+            },
+        ],
+    )
+
+    shm_text = _read_case_file(case_dir, "system/snappyHexMeshDict")
+
+    assert "type searchableBox;" in shm_text
+    assert "foilInnerShell {" in shm_text
+    assert "min (-0.25 -0.1 -0.05);" in shm_text
+    assert "max (1.25 0.1 0.05);" in shm_text
+    assert "foilOuterShell {" in shm_text
+    assert "mode inside;" in shm_text
+    assert "levels ((1E15 5));" in shm_text
+    assert "levels ((1E15 4));" in shm_text
+
+
+def test_refinement_region_helper_scales_from_chord():
+    regions = _build_refinement_regions(
+        (0.0, 1.0, -0.2, 0.2, -0.05, 0.05),
+        mesh_density=1.0,
+        feature_level=4,
+    )
+
+    assert [region["name"] for region in regions] == ["foilInnerShell", "foilOuterShell"]
+
+    inner, outer = regions
+    assert inner["level"] == 4
+    assert outer["level"] == 3
+
+    assert inner["min_x"] == pytest.approx(-0.2)
+    assert inner["max_x"] == pytest.approx(1.35)
+    assert outer["min_x"] == pytest.approx(-0.6)
+    assert outer["max_x"] == pytest.approx(2.0)
+
+    assert outer["min_x"] < inner["min_x"]
+    assert outer["max_x"] > inner["max_x"]
+    assert outer["min_y"] < inner["min_y"]
+    assert outer["max_y"] > inner["max_y"]
+    assert outer["min_z"] < inner["min_z"]
+    assert outer["max_z"] > inner["max_z"]
+
+
+def test_presentation_quality_flags_low_resolution_surface():
+    summary = _assess_mesh_presentation_quality(
+        {
+            "surface_features": {"emesh_present": False},
+            "snappy": {"features_block_populated": False},
+            "foil_surface": {
+                "patch_found": True,
+                "cell_count": MIN_PRESENTATION_FOIL_SURFACE_CELLS - 1,
+                "point_count": 4000,
+            },
+        }
+    )
+
+    assert summary["presentation_ok"] is False
+    assert any("feature edge mesh missing" in issue for issue in summary["presentation_issues"])
+    assert any("features() block" in issue for issue in summary["presentation_issues"])
+    assert any("presentation threshold" in issue for issue in summary["presentation_issues"])
 
 
 # ═════════════════════════════════════════════════════════════════════════════

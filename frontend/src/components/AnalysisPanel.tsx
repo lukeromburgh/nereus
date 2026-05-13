@@ -29,6 +29,7 @@ import {
 } from "../lib/residuals";
 import { downloadCSV, metricsToCSV, convergenceToCSV } from "../lib/exportCSV";
 import { OrientationWarningBanner } from "./OrientationWarningBanner";
+import type { MeshDiagnostics } from "../store/useSimStore";
 
 function formatNumber(val: number | null | undefined, digits = 2) {
   if (val === null || val === undefined || Number.isNaN(val)) return "—";
@@ -264,6 +265,63 @@ function FlowConditionsCard({
   );
 }
 
+function MeshDiagnosticsCard({ diagnostics }: { diagnostics: MeshDiagnostics }) {
+  const foilCellCount = diagnostics.foil_surface?.cell_count ?? null;
+  const nonOrth = diagnostics.max_non_orthogonality ?? null;
+  const skew = diagnostics.max_skewness ?? null;
+  const refinementLevels = diagnostics.snappy?.surface_refinement_levels ?? [];
+  const refinementLabel = refinementLevels.filter((value) => value !== null && value !== undefined).join(" / ");
+  const issues = diagnostics.presentation_issues ?? diagnostics.issues ?? [];
+
+  return (
+    <div className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] p-2.5 flex flex-col gap-2" style={{ borderRadius: '2px' }}>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] tracking-[0.1em] uppercase text-[rgba(255,255,255,0.35)]">Mesh Diagnostics</span>
+        <span className={`text-[10px] font-medium uppercase tracking-[0.08em] ${diagnostics.presentation_ok === false ? "text-nereus-orange" : "text-nereus-accent"}`}>
+          {diagnostics.presentation_ok === false ? "Warning" : "Ready"}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-[10px] font-mono tabular-nums text-[rgba(255,255,255,0.6)]">
+        <div className="space-y-1">
+          <div className="text-[rgba(255,255,255,0.3)]">Foil cells</div>
+          <div>{foilCellCount ?? "—"}</div>
+        </div>
+        <div className="space-y-1">
+          <div className="text-[rgba(255,255,255,0.3)]">Surface levels</div>
+          <div>{refinementLabel || "—"}</div>
+        </div>
+        <div className="space-y-1">
+          <div className="text-[rgba(255,255,255,0.3)]">Max non-orth</div>
+          <div>{nonOrth !== null ? nonOrth.toFixed(1) : "—"}</div>
+        </div>
+        <div className="space-y-1">
+          <div className="text-[rgba(255,255,255,0.3)]">Max skew</div>
+          <div>{skew !== null ? skew.toFixed(2) : "—"}</div>
+        </div>
+        <div className="space-y-1">
+          <div className="text-[rgba(255,255,255,0.3)]">eMesh</div>
+          <div>{diagnostics.surface_features?.emesh_present ? "present" : "missing"}</div>
+        </div>
+        <div className="space-y-1">
+          <div className="text-[rgba(255,255,255,0.3)]">Feature block</div>
+          <div>{diagnostics.snappy?.features_block_populated ? "on" : "off"}</div>
+        </div>
+      </div>
+
+      {issues.length > 0 && (
+        <div className="border-t border-[rgba(255,255,255,0.06)] pt-2 space-y-1">
+          {issues.slice(0, 3).map((issue) => (
+            <div key={issue} className="text-[10px] text-[rgba(255,255,255,0.5)]">
+              {issue}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AnalysisPanel() {
   const currentFrame = useSimStore((s) => s.currentFrame);
   const metricsSeries = useSimStore((s) => s.metricsSeries);
@@ -275,6 +333,7 @@ export function AnalysisPanel() {
   const waterDensity = useSimStore((s) => s.waterDensity);
   const activeSimId = useSimStore((s) => s.activeSimId);
   const aoa = useSimStore((s) => s.aoa);
+  const meshDiagnostics = useSimStore((s) => s.meshDiagnostics);
 
   const [visibleResiduals, setVisibleResiduals] = useState<
     Record<string, boolean>
@@ -346,6 +405,8 @@ export function AnalysisPanel() {
 
       {/* Orientation auto-correction warning */}
       <OrientationWarningBanner />
+
+      {meshDiagnostics && <MeshDiagnosticsCard diagnostics={meshDiagnostics} />}
 
       {/* Flow Conditions — effective AoA and velocity decomposition */}
       {activeSimId && (

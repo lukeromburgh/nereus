@@ -434,6 +434,14 @@ geometry {
         type triSurfaceMesh;
         name foil;
     }
+{% for region in refinement_regions %}
+
+    {{ region.name }} {
+        type searchableBox;
+        min ({{ region.min_x }} {{ region.min_y }} {{ region.min_z }});
+        max ({{ region.max_x }} {{ region.max_y }} {{ region.max_z }});
+    }
+{% endfor %}
 }
 
 castellatedMeshControls {
@@ -451,9 +459,20 @@ castellatedMeshControls {
 
     refinementSurfaces {
         foil {
-            level (3 4); // Min/Max refinement level
+            level ({{ surface_min_level }} {{ surface_max_level }});
         }
     }
+
+{% if refinement_regions %}
+    refinementRegions {
+{% for region in refinement_regions %}
+        {{ region.name }} {
+            mode inside;
+            levels ((1E15 {{ region.level }}));
+        }
+{% endfor %}
+    }
+{% endif %}
     
     // CRITICAL: Tells OpenFOAM where the "Water" is.
     // Must be a point OUTSIDE the foil but INSIDE the bounding box.
@@ -461,10 +480,13 @@ castellatedMeshControls {
 }
 
 snapControls {
-    nSmoothPatch 3;
+    nSmoothPatch 5;
     tolerance 2.0;
-    nSolveIter 30;
-    nRelaxIter 5;
+    nSolveIter 100;
+    nRelaxIter 8;
+    explicitFeatureSnap true;
+    implicitFeatureSnap false;
+    nFeatureSnapIter 15;
 }
 
 {% if enable_layers %}
@@ -628,6 +650,7 @@ class TemplateManager:
         feature_level=4,
         enable_gravity=True,
         chord_m=None,
+        refinement_regions=None,
     ):
         """
         Generates the initialized OpenFOAM dict structures based on user inputs.
@@ -696,6 +719,8 @@ class TemplateManager:
         # 5. Write the snappyHexMeshDict (mesh shrink-wrap + layers + feature edges)
         # eMesh_available starts False; call refresh_snappy_features() after
         # surfaceFeatureExtract to re-render with edges enabled.
+        surface_max_level = max(5, int(feature_level))
+        surface_min_level = max(4, surface_max_level - 1)
         self._snappy_context = {
             "loc_x": location_in_mesh[0],
             "loc_y": location_in_mesh[1],
@@ -705,7 +730,10 @@ class TemplateManager:
             "layer_expansion": layer_expansion,
             "first_layer_thickness": first_layer_thickness,
             "feature_level": feature_level,
+            "surface_min_level": surface_min_level,
+            "surface_max_level": surface_max_level,
             "eMesh_available": False,
+            "refinement_regions": refinement_regions or [],
         }
         self.write_file("system/snappyHexMeshDict", SHM_TEMPLATE, self._snappy_context)
 

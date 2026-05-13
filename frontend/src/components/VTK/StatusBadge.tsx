@@ -4,9 +4,9 @@
  * Shows run ID, status with icon, and simulation time.
  * Replaces the verbose text-based badge.
  */
-import { Circle, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Circle, Loader2, CheckCircle2, AlertCircle, Square } from "lucide-react";
 
-type RunStatus = "IDLE" | "PENDING" | "MESHING" | "SOLVING" | "COMPLETED" | "FAILED";
+type RunStatus = "IDLE" | "LOADING" | "PENDING" | "MESHING" | "RUNNING" | "SOLVING" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 interface StatusBadgeProps {
   runId: string | null;
@@ -20,6 +20,11 @@ const statusConfig: Record<RunStatus, { icon: React.ReactNode; color: string; la
     color: "text-[rgba(255,255,255,0.3)]",
     label: "Idle",
   },
+  LOADING: {
+    icon: <Loader2 className="h-1.5 w-1.5 animate-spin" />,
+    color: "text-[rgba(255,255,255,0.45)]",
+    label: "Loading",
+  },
   PENDING: {
     icon: <Loader2 className="h-1.5 w-1.5 animate-spin" />,
     color: "text-nereus-accent",
@@ -29,6 +34,11 @@ const statusConfig: Record<RunStatus, { icon: React.ReactNode; color: string; la
     icon: <Loader2 className="h-1.5 w-1.5 animate-spin" />,
     color: "text-nereus-accent",
     label: "Meshing",
+  },
+  RUNNING: {
+    icon: <Loader2 className="h-1.5 w-1.5 animate-spin" />,
+    color: "text-nereus-accent",
+    label: "Solving",
   },
   SOLVING: {
     icon: <Loader2 className="h-1.5 w-1.5 animate-spin" />,
@@ -44,6 +54,11 @@ const statusConfig: Record<RunStatus, { icon: React.ReactNode; color: string; la
     icon: <AlertCircle className="h-1.5 w-1.5" />,
     color: "text-nereus-orange",
     label: "Failed",
+  },
+  CANCELLED: {
+    icon: <Square className="h-1.5 w-1.5" />,
+    color: "text-[rgba(255,255,255,0.55)]",
+    label: "Cancelled",
   },
 };
 

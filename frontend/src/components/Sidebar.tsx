@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { Box, PlayCircle, Circle, Loader2, ChevronRight, Folder as FolderIcon, FolderOpen, FileBox } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Box, PlayCircle, Circle, Loader2, ChevronRight, Folder as FolderIcon, FolderOpen, FileBox, RotateCcw, Square } from "lucide-react";
 import { useSimStore } from "../store/useSimStore";
-import apiClient from "../lib/apiClient";
+import apiClient, { isAxiosError } from "../lib/apiClient";
 import { assetApi } from "../lib/assetApi";
+import { toast } from "@/lib/toast";
 import type { Folder, HydrofoilAsset } from "../types/assets";
 
 type SimulationRun = {
@@ -13,12 +14,16 @@ type SimulationRun = {
   created_at: string;
 };
 
+const ACTIVE_RUN_STATUSES = new Set(["PENDING", "MESHING", "RUNNING"]);
+const RESTARTABLE_RUN_STATUSES = new Set(["FAILED", "COMPLETED", "CANCELLED"]);
+
 function statusDotColor(status: string) {
   if (status === "RUNNING" || status === "MESHING")
     return "text-[#00d4ff]";
   if (status === "PENDING") return "text-[#f5a623]";
   if (status === "COMPLETED") return "text-[#34d399]";
   if (status === "FAILED") return "text-[#ef4444]";
+  if (status === "CANCELLED") return "text-[rgba(255,255,255,0.45)]";
   return "text-[rgba(255,255,255,0.35)]";
 }
 
@@ -127,12 +132,14 @@ function FolderNode({
 }
 
 export function Sidebar({ refreshNonce }: { refreshNonce: number }) {
-  const { projectId, selectedAssetId, setSelectedAsset, setSelectedAssetId, selectSim, updateSim } = useSimStore();
+  const { projectId, selectedAssetId, activeSimId, setSelectedAsset, startNewSim, selectSim, updateSim } = useSimStore();
   const [rootFolders, setRootFolders] = useState<Folder[]>([]);
   const [rootAssets, setRootAssets] = useState<HydrofoilAsset[]>([]);
   const [runs, setRuns] = useState<SimulationRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const [actionRunId, setActionRunId] = useState<number | null>(null);
+  const [actionType, setActionType] = useState<"rerun" | "cancel" | null>(null);
 
   const toggleFolder = (id: number) => {
     setExpandedIds((prev) => {
@@ -155,35 +162,42 @@ export function Sidebar({ refreshNonce }: { refreshNonce: number }) {
     return result;
   }, [rootFolders, rootAssets]);
 
+  const loadSidebarData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [treeResp, runsResp] = await Promise.all([
+        assetApi.getFolderTree(projectId),
+        apiClient.get<SimulationRun[]>("/api/runs/"),
+      ]);
+
+      setRootFolders(treeResp.data.folders);
+      setRootAssets(treeResp.data.assets);
+
+      const runsForProject = runsResp.data
+        .filter((run) => run.project === projectId)
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+      setRuns(runsForProject);
+
+      if (!selectedAssetId) {
+        const firstAsset = treeResp.data.assets[0] || findFirstAsset(treeResp.data.folders);
+        if (firstAsset) setSelectedAsset(firstAsset);
+      }
+    } catch (err) {
+      console.error("Failed loading sidebar data", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId, selectedAssetId, setSelectedAsset]);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      setLoading(true);
-      try {
-        const [treeResp, runsResp] = await Promise.all([
-          assetApi.getFolderTree(projectId),
-          apiClient.get<SimulationRun[]>("/api/runs/"),
-        ]);
-        if (cancelled) return;
-        setRootFolders(treeResp.data.folders);
-        setRootAssets(treeResp.data.assets);
-        const runsForProject = runsResp.data
-          .filter((r) => r.project === projectId)
-          .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-        setRuns(runsForProject);
-        if (!selectedAssetId) {
-          const firstAsset = treeResp.data.assets[0] || findFirstAsset(treeResp.data.folders);
-          if (firstAsset) setSelectedAsset(firstAsset);
-        }
-      } catch (err) {
-        console.error("Failed loading sidebar data", err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      await loadSidebarData();
+      if (cancelled) return;
     }
     load();
     return () => { cancelled = true; };
-  }, [projectId, refreshNonce, selectedAssetId, setSelectedAssetId]);
+  }, [loadSidebarData, refreshNonce]);
 
   const selectedAsset = useMemo(
     () => allAssets.find((a) => a.id === selectedAssetId) || null,
@@ -199,6 +213,51 @@ export function Sidebar({ refreshNonce }: { refreshNonce: number }) {
       updateSim(data);
     } catch (err) {
       console.error("Failed to load run", err);
+    }
+  };
+
+  const handleRunAction = async (run: SimulationRun, action: "rerun" | "cancel") => {
+    setActionRunId(run.id);
+    setActionType(action);
+
+    try {
+      const { data } = await apiClient.post(
+        `/api/runs/${run.id}/${action === "rerun" ? "rerun" : "cancel"}/`,
+      );
+
+      if (action === "rerun") {
+        startNewSim(data.id);
+        toast.success(
+          run.status === "COMPLETED"
+            ? `Rerun queued (ID: ${String(data.id).slice(0, 6)})`
+            : `Retry queued (ID: ${String(data.id).slice(0, 6)})`,
+        );
+      } else {
+        setRuns((current) =>
+          current.map((entry) =>
+            entry.id === run.id ? { ...entry, status: data.status } : entry,
+          ),
+        );
+
+        if (activeSimId === run.id) {
+          updateSim(data);
+        }
+
+        toast.success(run.status === "PENDING" ? `Run #${run.id} cancelled` : `Run #${run.id} stopped`);
+      }
+
+      await loadSidebarData();
+    } catch (error) {
+      console.error(`Failed to ${action} run`, error);
+      const responseData = isAxiosError(error) ? ((error.response?.data as { error?: string; detail?: string }) ?? {}) : {};
+      const message =
+        responseData.error ||
+        responseData.detail ||
+        (error instanceof Error ? error.message : `Failed to ${action} run`);
+      toast.error(message);
+    } finally {
+      setActionRunId(null);
+      setActionType(null);
     }
   };
 
@@ -274,33 +333,84 @@ export function Sidebar({ refreshNonce }: { refreshNonce: number }) {
           <div className="text-[10px] text-[rgba(255,255,255,0.35)] px-1">No simulations yet.</div>
         ) : (
           <div className="flex flex-col gap-1">
-            {runs.slice(0, 30).map((run) => (
-              <button
-                key={run.id}
-                onClick={() => handleSelectRun(run.id)}
-                className="text-left w-full px-2 py-1.5 border-l-2 border-transparent hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.1)] transition-all duration-150 group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <Circle className={`h-1.5 w-1.5 fill-current ${statusDotColor(run.status)} ${statusDotAnim(run.status)}`} />
-                    <span className="text-[11px] font-medium text-[rgba(255,255,255,0.5)] group-hover:text-white font-mono">
-                      #{run.id}
-                    </span>
-                  </div>
-                  <span className={`text-[10px] font-medium font-mono ${statusDotColor(run.status)}`}>
-                    {run.status}
-                  </span>
+            {runs.slice(0, 30).map((run) => {
+              const isSelected = activeSimId === run.id;
+              const canRestart = RESTARTABLE_RUN_STATUSES.has(run.status);
+              const canCancel = ACTIVE_RUN_STATUSES.has(run.status);
+              const isActionLoading = actionRunId === run.id;
+
+              return (
+                <div
+                  key={run.id}
+                  className={`border-l-2 transition-all duration-150 ${
+                    isSelected
+                      ? "bg-[rgba(0,212,255,0.06)] border-nereus-accent"
+                      : "border-transparent hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.1)]"
+                  }`}
+                >
+                  <button
+                    onClick={() => handleSelectRun(run.id)}
+                    className="text-left w-full px-2 py-1.5 group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Circle className={`h-1.5 w-1.5 fill-current ${statusDotColor(run.status)} ${statusDotAnim(run.status)}`} />
+                        <span className={`text-[11px] font-medium font-mono ${isSelected ? "text-white" : "text-[rgba(255,255,255,0.5)] group-hover:text-white"}`}>
+                          #{run.id}
+                        </span>
+                      </div>
+                      <span className={`text-[10px] font-medium font-mono ${statusDotColor(run.status)}`}>
+                        {run.status}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-[rgba(255,255,255,0.25)] mt-0.5 truncate pl-4 font-mono">
+                      {new Date(run.created_at).toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </div>
+                  </button>
+
+                  {(canRestart || canCancel) && (
+                    <div className="flex items-center gap-1 px-2 pb-1.5 pl-5">
+                      {canRestart && (
+                        <button
+                          onClick={() => handleRunAction(run, "rerun")}
+                          disabled={isActionLoading}
+                          className="inline-flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] text-[rgba(255,255,255,0.55)] hover:text-white hover:bg-[rgba(255,255,255,0.08)] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
+                          style={{ borderRadius: "2px" }}
+                        >
+                          {isActionLoading && actionType === "rerun" ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <RotateCcw className="h-3 w-3" />
+                          )}
+                          {run.status === "COMPLETED" ? "Rerun" : "Retry"}
+                        </button>
+                      )}
+
+                      {canCancel && (
+                        <button
+                          onClick={() => handleRunAction(run, "cancel")}
+                          disabled={isActionLoading}
+                          className="inline-flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium border border-[rgba(255,107,53,0.18)] bg-[rgba(255,107,53,0.06)] text-nereus-orange hover:bg-[rgba(255,107,53,0.12)] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
+                          style={{ borderRadius: "2px" }}
+                        >
+                          {isActionLoading && actionType === "cancel" ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Square className="h-3 w-3" />
+                          )}
+                          {run.status === "PENDING" ? "Cancel" : "Stop"}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="text-[10px] text-[rgba(255,255,255,0.25)] mt-0.5 truncate pl-4 font-mono">
-                  {new Date(run.created_at).toLocaleString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

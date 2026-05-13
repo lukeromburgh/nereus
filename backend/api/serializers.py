@@ -368,6 +368,7 @@ class SimulationRunSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = [
             'status',
+            'celery_task_id',
             'created_at',
             'updated_at',
             'current_logs',
@@ -392,6 +393,7 @@ class SimulationRunSerializer(serializers.ModelSerializer):
             'omega_0',
             'x_over_c_10pct_decay',
             'file_manifest',
+            'mesh_diagnostics',
             'geometry_axes_detected',
             'orientation_preview_url',
             'geometry_dimensions',

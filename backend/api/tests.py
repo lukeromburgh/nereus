@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -211,3 +212,103 @@ class SimulationRunDispatchFailureTests(TestCase):
         self.assertEqual(run.status, SimulationRun.StatusChoices.FAILED)
         self.assertIn("Failed to enqueue simulation task", run.current_logs)
         self.assertIn("RuntimeError: broker unavailable", run.current_logs)
+
+
+class SimulationRunActionTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="run-actions-admin",
+            email="run-actions-admin@example.com",
+            password="ComplexPass123!",
+        )
+        self.team = Team.objects.create(name="Run Actions Team")
+        TeamMembership.objects.create(
+            team=self.team,
+            user=self.user,
+            role=TeamMembership.RoleChoices.TEAM_ADMIN,
+        )
+        self.project = Project.objects.create(team=self.team, name="Run Actions Project")
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def _payload(self):
+        return {
+            "project": self.project.id,
+            "mass": 120.0,
+            "payload_weight": 15.0,
+            "center_of_gravity": [0.0, 0.0, 0.0],
+            "velocity": 8.0,
+            "angle_of_attack": 5.0,
+            "water_density": 1025.0,
+            "wave_height": 0.25,
+            "submersion_depth": 0.75,
+            "mesh_density": 1.0,
+            "slice_axis": "y",
+        }
+
+    def test_create_tracks_celery_task_id(self):
+        with patch("api.views.celery_app.send_task", return_value=SimpleNamespace(id="task-123")) as mocked_send_task:
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post("/api/runs/", self._payload(), format="json")
+
+        self.assertEqual(response.status_code, 201)
+        run = SimulationRun.objects.get(pk=response.json()["id"])
+        mocked_send_task.assert_called_once_with("tasks.run_hydro_simulation", args=[run.id])
+        self.assertEqual(run.celery_task_id, "task-123")
+
+    def test_rerun_clones_terminal_run_and_enqueues_new_task(self):
+        run = SimulationRun.objects.create(
+            status=SimulationRun.StatusChoices.COMPLETED,
+            project=self.project,
+            mass=120.0,
+            payload_weight=15.0,
+            center_of_gravity=[0.0, 0.0, 0.0],
+            velocity=8.0,
+            angle_of_attack=5.0,
+            water_density=1025.0,
+            wave_height=0.25,
+            submersion_depth=0.75,
+            mesh_density=1.0,
+            slice_axis="y",
+        )
+
+        with patch("api.views.celery_app.send_task", return_value=SimpleNamespace(id="task-rerun")) as mocked_send_task:
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post(f"/api/runs/{run.id}/rerun/", {}, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        rerun = SimulationRun.objects.get(pk=response.json()["id"])
+        self.assertNotEqual(rerun.id, run.id)
+        self.assertEqual(rerun.project_id, run.project_id)
+        self.assertEqual(rerun.velocity, run.velocity)
+        self.assertEqual(rerun.angle_of_attack, run.angle_of_attack)
+        self.assertEqual(rerun.status, SimulationRun.StatusChoices.PENDING)
+        self.assertEqual(rerun.celery_task_id, "task-rerun")
+        mocked_send_task.assert_called_once_with("tasks.run_hydro_simulation", args=[rerun.id])
+
+    def test_cancel_marks_run_cancelled_and_revokes_task(self):
+        run = SimulationRun.objects.create(
+            status=SimulationRun.StatusChoices.RUNNING,
+            celery_task_id="task-running",
+            project=self.project,
+            mass=120.0,
+            payload_weight=15.0,
+            center_of_gravity=[0.0, 0.0, 0.0],
+            velocity=8.0,
+            angle_of_attack=5.0,
+            water_density=1025.0,
+            wave_height=0.25,
+            submersion_depth=0.75,
+            mesh_density=1.0,
+            slice_axis="y",
+        )
+
+        with patch("api.views.celery_app.control.revoke") as mocked_revoke:
+            response = self.client.post(f"/api/runs/{run.id}/cancel/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        run.refresh_from_db()
+        self.assertEqual(run.status, SimulationRun.StatusChoices.CANCELLED)
+        self.assertEqual(run.current_logs, "Run cancelled by user.")
+        mocked_revoke.assert_called_once_with("task-running", terminate=False)

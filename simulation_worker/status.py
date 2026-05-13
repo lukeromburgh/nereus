@@ -9,6 +9,11 @@ class StatusPatchError(Exception):
     pass
 
 
+class CancelledRunError(Exception):
+    """Raised when a run has been cancelled by the user."""
+    pass
+
+
 def patch_django_status(
     sim_id,
     status=None,
@@ -19,6 +24,7 @@ def patch_django_status(
     frame_mapping=None,
     metrics_series=None,
     convergence_series=None,
+    mesh_diagnostics=None,
     raise_on_failure=False,
 ) -> bool:
     """Patch simulation run status to Django API.
@@ -53,12 +59,32 @@ def patch_django_status(
         payload["metrics_series"] = metrics_series
     if convergence_series is not None:
         payload["convergence_series"] = convergence_series
+    if mesh_diagnostics is not None:
+        payload["mesh_diagnostics"] = mesh_diagnostics
 
     if not payload:
         return True
 
     try:
         from api.models import SimulationRun
+
+        current_status = (
+            SimulationRun.objects.filter(id=sim_id)
+            .values_list("status", flat=True)
+            .first()
+        )
+        if current_status is None:
+            message = f"SimulationRun {sim_id} not found while updating status"
+            logger.error(message)
+            if raise_on_failure:
+                raise StatusPatchError(message)
+            return False
+
+        if (
+            current_status == SimulationRun.StatusChoices.CANCELLED
+            and status != SimulationRun.StatusChoices.CANCELLED
+        ):
+            return True
 
         updated = SimulationRun.objects.filter(id=sim_id).update(**payload)
         if updated:
@@ -81,4 +107,4 @@ class DivergenceError(Exception):
     pass
 
 
-__all__ = ['patch_django_status', 'DivergenceError', 'StatusPatchError']
+__all__ = ['patch_django_status', 'DivergenceError', 'StatusPatchError', 'CancelledRunError']

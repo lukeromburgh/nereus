@@ -172,10 +172,15 @@ def post_process(case_dir, sim_id, *, velocity, rho=1025.0, p_vapour=None):
     foil_bbox = None
     chord_length = 1.0
     span_length = 1.0
+    results["foil_surface_patch_found"] = bool(foil_surface is not None)
+    results["foil_surface_cell_count"] = 0
+    results["foil_surface_point_count"] = 0
     if foil_surface is not None:
         fb = foil_surface.bounds
         chord_length = max(float(fb[1]) - float(fb[0]), 1e-9)
         span_length = max(float(fb[3]) - float(fb[2]), 1e-9)
+        results["foil_surface_cell_count"] = int(foil_surface.n_cells)
+        results["foil_surface_point_count"] = int(foil_surface.n_points)
         foil_bbox = {
             "x_min": float(fb[0]), "x_max": float(fb[1]),
             "y_min": float(fb[2]), "y_max": float(fb[3]),
@@ -764,7 +769,7 @@ def _parse_simplefoam_residuals(case_dir) -> list:
       smoothSolver:  Solving for Ux, Initial residual = 0.123, Final residual = ...
 
     Returns:
-        list: Convergence series with iteration, time, and max initial residual.
+        list: Convergence series with iteration, time, and final pressure residual.
     """
     import re
     from pathlib import Path
@@ -784,17 +789,23 @@ def _parse_simplefoam_residuals(case_dir) -> list:
         r"Solving for (\w+),\s*Initial residual\s*=\s*([\d.eE+-]+)"
     )
 
+    def select_convergence_residual(residuals):
+        for field in ("p_rgh", "p"):
+            value = residuals.get(field)
+            if value is not None:
+                return value
+        return max(residuals.values())
+
     try:
         with open(log_file, 'r') as f:
             for line in f:
                 time_match = time_pattern.match(line)
                 if time_match:
                     if current_time is not None and current_residuals:
-                        max_residual = max(current_residuals.values())
                         series.append({
                             "iteration": len(series),
                             "time": current_time,
-                            "residual": max_residual,
+                            "residual": select_convergence_residual(current_residuals),
                         })
                     current_time = float(time_match.group(1))
                     current_residuals = {}
@@ -804,15 +815,15 @@ def _parse_simplefoam_residuals(case_dir) -> list:
                 if residual_match and current_time is not None:
                     field = residual_match.group(1)
                     value = float(residual_match.group(2))
-                    # Keep the first (i.e. initial) value for each field per step
-                    if field not in current_residuals:
-                        current_residuals[field] = value
+                    # Keep the latest solve for each field so the series reflects
+                    # the converged pressure correction for that timestep.
+                    current_residuals[field] = value
 
         if current_time is not None and current_residuals:
             series.append({
                 "iteration": len(series),
                 "time": current_time,
-                "residual": max(current_residuals.values()),
+                "residual": select_convergence_residual(current_residuals),
             })
     except Exception as e:
         logger.warning(f"_parse_simplefoam_residuals failed: {e}")

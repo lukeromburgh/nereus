@@ -50,14 +50,78 @@ from nereus_core.celery import app as celery_app
 
 logger = logging.getLogger(__name__)
 
+ACTIVE_RUN_STATUSES = {
+    SimulationRun.StatusChoices.PENDING,
+    SimulationRun.StatusChoices.MESHING,
+    SimulationRun.StatusChoices.RUNNING,
+}
+RESTARTABLE_RUN_STATUSES = {
+    SimulationRun.StatusChoices.FAILED,
+    SimulationRun.StatusChoices.COMPLETED,
+    SimulationRun.StatusChoices.CANCELLED,
+}
+
+
+def _copy_run_asset_to_case(instance):
+    if instance.asset and instance.asset.file:
+        sim_dir = os.path.join(
+            settings.BASE_DIR.parent,
+            'data',
+            'simulations',
+            str(instance.id),
+            'constant',
+            'triSurface',
+        )
+        os.makedirs(sim_dir, exist_ok=True)
+
+        source_path = instance.asset.file.path
+        _, ext = os.path.splitext(source_path)
+        ext = (ext or '').lower()
+
+        dest_input_path = os.path.join(sim_dir, f"foil_input{ext}")
+        shutil.copy2(source_path, dest_input_path)
+
+        if ext == '.stl':
+            shutil.copy2(source_path, os.path.join(sim_dir, 'foil.stl'))
+
+
+def _build_clone_payload(run):
+    return {
+        'project': run.project_id,
+        'asset': run.asset_id,
+        'mass': run.mass,
+        'payload_weight': run.payload_weight,
+        'center_of_gravity': run.center_of_gravity,
+        'velocity': run.velocity,
+        'angle_of_attack': run.angle_of_attack,
+        'water_density': run.water_density,
+        'wave_height': run.wave_height,
+        'submersion_depth': run.submersion_depth,
+        'enable_gravity': run.enable_gravity,
+        'mesh_density': run.mesh_density,
+        'enable_layers': run.enable_layers,
+        'n_surface_layers': run.n_surface_layers,
+        'layer_expansion': run.layer_expansion,
+        'feature_level': run.feature_level,
+        'pitch': run.pitch,
+        'roll': run.roll,
+        'yaw': run.yaw,
+        'slice_axis': run.slice_axis,
+    }
+
 
 def _enqueue_simulation_run(run_id):
     try:
-        celery_app.send_task('tasks.run_hydro_simulation', args=[run_id])
+        async_result = celery_app.send_task('tasks.run_hydro_simulation', args=[run_id])
+        SimulationRun.objects.filter(pk=run_id).update(
+            celery_task_id=getattr(async_result, 'id', '') or '',
+            updated_at=timezone.now(),
+        )
     except Exception as exc:
         logger.exception('Failed to enqueue simulation task for run %s', run_id)
         SimulationRun.objects.filter(pk=run_id).update(
             status=SimulationRun.StatusChoices.FAILED,
+            celery_task_id='',
             current_logs=f'Failed to enqueue simulation task: {type(exc).__name__}: {exc}',
             updated_at=timezone.now(),
         )
@@ -524,6 +588,7 @@ class SimulationRunViewSet(viewsets.ModelViewSet):
             'frame_mapping': run.frame_mapping or [],
             'metrics_series': run.metrics_series or [],
             'convergence_series': run.convergence_series or [],
+            'mesh_diagnostics': run.mesh_diagnostics or {},
         }
 
         skin_friction_path = os.path.join(sim_dir, 'skin_friction_lines.vtp')
@@ -536,35 +601,59 @@ class SimulationRunViewSet(viewsets.ModelViewSet):
 
         return Response(payload)
 
-    def perform_create(self, serializer):
+    def _create_simulation_run(self, serializer):
         with transaction.atomic():
-            instance = serializer.save(status=SimulationRun.StatusChoices.PENDING)
-            
-            # Setup directories for OpenFOAM in the shared volume
-            if instance.asset and instance.asset.file:
-                # Path should match the Docker volume mapping
-                sim_dir = os.path.join(settings.BASE_DIR.parent, 'data', 'simulations', str(instance.id), 'constant', 'triSurface')
-                os.makedirs(sim_dir, exist_ok=True)
-                
-                # Copy the asset into the OpenFOAM case.
-                # OpenFOAM/snappyHexMesh consumes STL; for non-STL assets we copy as foil_input.<ext>
-                # and let the worker convert to foil.stl during preflight.
-                source_path = instance.asset.file.path
-                _, ext = os.path.splitext(source_path)
-                ext = (ext or '').lower()
-
-                dest_input_path = os.path.join(sim_dir, f"foil_input{ext}")
-                shutil.copy2(source_path, dest_input_path)
-
-                if ext == '.stl':
-                    shutil.copy2(source_path, os.path.join(sim_dir, 'foil.stl'))
-            
-            # Fire the Celery simulation task (orientation preview is now
-            # handled client-side; the preview_stl_orientation task runs only
-            # inside the simulation worker's pre-flight, not on every upload).
+            instance = serializer.save(
+                status=SimulationRun.StatusChoices.PENDING,
+                celery_task_id='',
+            )
+            _copy_run_asset_to_case(instance)
             transaction.on_commit(lambda run_id=instance.id: _enqueue_simulation_run(run_id))
 
         instance.refresh_from_db()
+        serializer.instance = instance
+        return instance
+
+    def perform_create(self, serializer):
+        self._create_simulation_run(serializer)
+
+    @action(detail=True, methods=['post'])
+    def rerun(self, request, pk=None):
+        run = self.get_object()
+        if run.status not in RESTARTABLE_RUN_STATUSES:
+            return Response(
+                {'error': 'Only completed, failed, or cancelled runs can be restarted.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(data=_build_clone_payload(run))
+        serializer.is_valid(raise_exception=True)
+        instance = self._create_simulation_run(serializer)
+        return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        run = self.get_object()
+        if run.status not in ACTIVE_RUN_STATUSES:
+            return Response(
+                {'error': 'Only pending, meshing, or running runs can be cancelled.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        SimulationRun.objects.filter(pk=run.pk).update(
+            status=SimulationRun.StatusChoices.CANCELLED,
+            current_logs='Run cancelled by user.',
+            updated_at=timezone.now(),
+        )
+
+        if run.celery_task_id:
+            try:
+                celery_app.control.revoke(run.celery_task_id, terminate=False)
+            except Exception:
+                logger.exception('Failed to revoke simulation task for run %s', run.pk)
+
+        run.refresh_from_db()
+        return Response(self.get_serializer(run).data)
 
     @action(detail=False, methods=['post'])
     def sweep(self, request):

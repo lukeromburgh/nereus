@@ -99,6 +99,7 @@ export function LogConsoleCompact() {
   const logs = useSimStore((s) => s.logs);
   const status = useSimStore((s) => s.status);
   const convergenceSeries = useSimStore((s) => s.convergenceSeries);
+  const meshDiagnostics = useSimStore((s) => s.meshDiagnostics);
   const [isExpanded, setIsExpanded] = useState(false);
 
   const entries = parseLogOutput(logs);
@@ -118,6 +119,7 @@ export function LogConsoleCompact() {
   const chartPath = useMemo(() => toSvgPath(chartPoints), [chartPoints]);
   const latestResidual = residuals[residuals.length - 1] ?? null;
   const lastChartPoint = chartPoints[chartPoints.length - 1] ?? null;
+  const presentationIssues = meshDiagnostics?.presentation_issues ?? [];
   const isRunning =
     status === "PENDING" ||
     status === "MESHING" ||
@@ -169,6 +171,17 @@ export function LogConsoleCompact() {
               className="h-full bg-nereus-accent transition-all duration-300"
               style={{ width: `${progress * 100}%` }}
             />
+          </div>
+        </div>
+      )}
+
+      {presentationIssues.length > 0 && (
+        <div className="px-3 py-2 border-t border-[rgba(255,107,53,0.18)] bg-[rgba(255,107,53,0.06)]">
+          <div className="text-[10px] font-medium uppercase tracking-[0.1em] text-nereus-orange">
+            Mesh Warning
+          </div>
+          <div className="mt-1 text-[10px] text-[rgba(255,255,255,0.55)]">
+            {presentationIssues[0]}
           </div>
         </div>
       )}

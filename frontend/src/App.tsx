@@ -94,6 +94,8 @@ function SimulationToolbar({ onRefresh }: { onRefresh: () => void }) {
       ? "bg-[rgba(0,212,255,0.08)] text-nereus-accent border-[rgba(0,212,255,0.2)]"
       : status === "FAILED"
         ? "bg-[rgba(255,107,53,0.08)] text-nereus-orange border-[rgba(255,107,53,0.2)]"
+        : status === "CANCELLED"
+          ? "bg-[rgba(255,255,255,0.05)] text-[rgba(255,255,255,0.55)] border-[rgba(255,255,255,0.12)]"
         : status === "RUNNING" || status === "MESHING"
           ? "bg-[rgba(0,212,255,0.08)] text-nereus-accent border-[rgba(0,212,255,0.2)] animate-pulse-slow"
           : status === "PENDING"
@@ -190,7 +192,7 @@ export default function SimulationPage() {
         );
         if (cancelled) return;
         updateSim(data);
-        if (data.status === "COMPLETED" || data.status === "FAILED") return;
+        if (data.status === "COMPLETED" || data.status === "FAILED" || data.status === "CANCELLED") return;
       } catch (error) {
         console.error("Polling error fetching run:", error);
       }

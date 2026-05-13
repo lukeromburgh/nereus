@@ -219,6 +219,7 @@ class SimulationRun(models.Model):
         RUNNING = 'RUNNING', 'Running'
         COMPLETED = 'COMPLETED', 'Completed'
         FAILED = 'FAILED', 'Failed'
+        CANCELLED = 'CANCELLED', 'Cancelled'
 
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='simulation_runs')
     asset = models.ForeignKey(HydrofoilAsset, on_delete=models.CASCADE, related_name='simulation_runs', null=True, blank=True)
@@ -315,6 +316,12 @@ class SimulationRun(models.Model):
         choices=StatusChoices.choices,
         default=StatusChoices.PENDING
     )
+    celery_task_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Celery task id for run lifecycle control",
+    )
     
     current_logs = models.TextField(blank=True, null=True, help_text="Last 5 lines of solver output")
     result_mesh_path = models.CharField(max_length=512, blank=True, null=True, help_text="Path to the reduced GLTF result")
@@ -377,6 +384,7 @@ class SimulationRun(models.Model):
     omega_0 = models.FloatField(null=True, blank=True)
     x_over_c_10pct_decay = models.FloatField(null=True, blank=True)
     file_manifest = models.JSONField(default=dict, blank=True)
+    mesh_diagnostics = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

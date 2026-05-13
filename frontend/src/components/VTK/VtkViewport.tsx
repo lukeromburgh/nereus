@@ -24,11 +24,14 @@ export function VtkViewport() {
   const activeSimId = useSimStore((s) => s.activeSimId);
   const status = useSimStore((s) => s.status) as
     | "IDLE"
+    | "LOADING"
     | "PENDING"
     | "MESHING"
+    | "RUNNING"
     | "SOLVING"
     | "COMPLETED"
-    | "FAILED";
+    | "FAILED"
+    | "CANCELLED";
   const logs = useSimStore((s) => s.logs);
 
   // ── Extract time line from logs ──────────────────────────────────────

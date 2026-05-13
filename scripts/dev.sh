@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 
 POSTGRES_USER="${POSTGRES_USER:-nereus_admin}"
 POSTGRES_DB="${POSTGRES_DB:-nereus}"
+BUILD_STATE_FILE="$ROOT_DIR/.flow-build-state"
 
 require_command() {
   local command_name="$1"
@@ -70,6 +71,32 @@ ensure_frontend_dependencies() {
   fi
 }
 
+build_signature() {
+  shasum \
+    backend/Dockerfile \
+    backend/requirements.txt \
+    simulation_worker/Dockerfile \
+    | shasum \
+    | awk '{print $1}'
+}
+
+ensure_service_images() {
+  local force_build="${1:-false}"
+  local current_signature
+  local previous_signature=""
+
+  current_signature="$(build_signature)"
+  if [[ -f "$BUILD_STATE_FILE" ]]; then
+    previous_signature="$(<"$BUILD_STATE_FILE")"
+  fi
+
+  if [[ "$force_build" == "true" || "$current_signature" != "$previous_signature" ]]; then
+    echo "Building API and worker images..."
+    docker compose build api worker
+    printf '%s\n' "$current_signature" > "$BUILD_STATE_FILE"
+  fi
+}
+
 run_migrations() {
   echo "Running Django migrations..."
   docker compose run --rm --no-deps api python manage.py migrate
@@ -84,6 +111,13 @@ superuser_exists() {
 
 start_stack() {
   local build_flag="${1:-}"
+  local force_build="false"
+
+  if [[ "$build_flag" == "--build" ]]; then
+    force_build="true"
+  fi
+
+  ensure_service_images "$force_build"
 
   echo "Starting database and Redis..."
   docker compose up -d db redis
@@ -92,17 +126,14 @@ start_stack() {
   run_migrations
 
   echo "Starting API and worker..."
-  if [[ "$build_flag" == "--build" ]]; then
-    docker compose up -d --build api worker
-  else
-    docker compose up -d api worker
-  fi
+  docker compose up -d api worker
 }
 
 start_frontend() {
   ensure_frontend_dependencies
-  echo "Starting Vite at http://localhost:5173"
-  echo "Use 'npm run dev:down' from the repo root when you want to stop Docker services."
+  echo "Docker services are up. Starting Vite at http://localhost:5173"
+  echo "Flow stays attached to the Vite dev server by design."
+  echo "Press Ctrl+C to stop Vite, then run './flow down' if you also want to stop Docker services."
   exec npm --prefix frontend run dev
 }
 
@@ -118,7 +149,7 @@ run_init() {
     docker compose run --rm --no-deps api python manage.py createsuperuser
   fi
 
-  echo "Initial setup complete. Run 'npm run dev' from the repo root to start the full stack next time."
+  echo "Initial setup complete. Run './flow' from the repo root to start the full stack next time."
 }
 
 run_start() {

@@ -28,6 +28,36 @@ export type ConvergencePoint = {
   residual: number;
 };
 
+export type MeshDiagnostics = {
+  mesh_ok?: boolean;
+  issues?: string[];
+  presentation_ok?: boolean;
+  presentation_issues?: string[];
+  retried_without_layers?: boolean;
+  max_non_orthogonality?: number | null;
+  max_skewness?: number | null;
+  concave_cell_count?: number;
+  surface_features?: {
+    command_succeeded?: boolean;
+    emesh_present?: boolean;
+    emesh_path?: string | null;
+  };
+  snappy?: {
+    features_block_populated?: boolean;
+    surface_refinement_levels?: Array<number | null>;
+    feature_level?: number | null;
+    refinement_regions?: Array<{
+      name?: string;
+      level?: number | null;
+    }>;
+  };
+  foil_surface?: {
+    patch_found?: boolean;
+    cell_count?: number;
+    point_count?: number;
+  };
+};
+
 export type AnalysisPayload = {
   id: number;
   status: string;
@@ -36,6 +66,7 @@ export type AnalysisPayload = {
   metrics_series: MetricsPoint[];
   convergence_series: ConvergencePoint[];
   q_criterion_isosurface_path?: string | null;
+  mesh_diagnostics?: MeshDiagnostics;
 };
 
 interface SimulationState {
@@ -50,6 +81,7 @@ interface SimulationState {
   frameMapping: FrameMappingEntry[];
   metricsSeries: MetricsPoint[];
   convergenceSeries: ConvergencePoint[];
+  meshDiagnostics: MeshDiagnostics | null;
   totalFrames: number;
   currentFrame: number;
   isPlaying: boolean;
@@ -184,6 +216,7 @@ export const useSimStore = create<SimulationState>((set) => ({
   frameMapping: [],
   metricsSeries: [],
   convergenceSeries: [],
+  meshDiagnostics: null,
   totalFrames: 0,
   currentFrame: 0,
   isPlaying: false,
@@ -200,6 +233,7 @@ export const useSimStore = create<SimulationState>((set) => ({
         frameMapping,
         metricsSeries: payload.metrics_series || [],
         convergenceSeries: payload.convergence_series || [],
+        meshDiagnostics: payload.mesh_diagnostics ?? null,
         totalFrames,
         currentFrame: totalFrames > 0 ? 0 : 0,
         isPlaying: false,
@@ -212,6 +246,7 @@ export const useSimStore = create<SimulationState>((set) => ({
       frameMapping: [],
       metricsSeries: [],
       convergenceSeries: [],
+      meshDiagnostics: null,
       totalFrames: 0,
       currentFrame: 0,
       isPlaying: false,
@@ -341,6 +376,7 @@ export const useSimStore = create<SimulationState>((set) => ({
       frameMapping: [],
       metricsSeries: [],
       convergenceSeries: [],
+      meshDiagnostics: null,
       totalFrames: 0,
       currentFrame: 0,
       isPlaying: false,
@@ -356,6 +392,7 @@ export const useSimStore = create<SimulationState>((set) => ({
       frameMapping: [],
       metricsSeries: [],
       convergenceSeries: [],
+      meshDiagnostics: null,
       totalFrames: 0,
       currentFrame: 0,
       isPlaying: false,
@@ -384,6 +421,7 @@ export const useSimStore = create<SimulationState>((set) => ({
       convergenceSeries: Array.isArray(data.convergence_series)
         ? data.convergence_series
         : state.convergenceSeries,
+      meshDiagnostics: data.mesh_diagnostics ?? state.meshDiagnostics,
       orientationPreviewUrl: data.orientation_preview_url || null,
       geometryDimensions: data.geometry_dimensions || null,
       geometryAxesDetected: data.geometry_axes_detected || null,
